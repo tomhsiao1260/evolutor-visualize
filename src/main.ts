@@ -59,10 +59,18 @@ render()
 
 // GUI
 const gui = new GUI() 
-const params = { flatten: 0 }
+const params = { flatten: 0, opacity: 0.5, axis: 0 }
 
 gui.add(params, 'flatten', 0, 1, 0.01).onChange(() => {
   material.uniforms.flatten.value = params.flatten
+  render()
+})
+gui.add(params, 'opacity', 0, 1, 0.01).onChange(() => {
+  material.uniforms.opacity.value = params.opacity
+  render()
+})
+gui.add(params, 'axis', 0, 1, 0.01).onChange(() => {
+  material.uniforms.axis.value = params.axis
   render()
 })
 
