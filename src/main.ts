@@ -4,7 +4,9 @@ import { MOUSE, TOUCH } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { NRRDLoader } from 'three/examples/jsm/loaders/NRRDLoader';
 import { TIFFLoader } from 'three/addons/loaders/TIFFLoader.js'
+import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min'
 import { Shader } from './shader.ts'
+import { XYMaterial } from './XYMaterial.ts'
 
 window.addEventListener('resize', () =>
 {
@@ -33,6 +35,11 @@ const material = new Shader()
 const geometry = new THREE.PlaneGeometry(2, 2, 100, 100)
 const mesh = new THREE.Mesh(geometry, material)
 scene.add(mesh)
+
+const xyMaterial = new XYMaterial()
+const xymesh = new THREE.Mesh(geometry, xyMaterial)
+xymesh.position.z = -0.1
+scene.add(xymesh)
 
 // renderer setup
 const canvas = document.querySelector('.webgl')
@@ -65,15 +72,43 @@ Promise.all([
   nrrdLoader.loadAsync('x.nrrd'),
   nrrdLoader.loadAsync('y.nrrd')
 ]).then(([volumeTex, xgrid, ygrid]) => {
-    const { width, height } = volumeTex.source.data
+    const { width: w, height: h } = volumeTex.source.data
 
     volumeTex.magFilter = THREE.NearestFilter
     volumeTex.minFilter = THREE.LinearFilter
 
-    material.uniforms.volumeAspect.value = width / height
+    material.uniforms.volumeAspect.value = w / h
     material.uniforms.screenAspect.value = 2 / 2
     material.uniforms.voldata.value = volumeTex
-    console.log(volumeTex, xgrid, ygrid)
+
+    const xData = new Uint8ClampedArray(w * h)
+    const yData = new Uint8ClampedArray(w * h)
+
+    for (let i = 0; i < w * h; ++i) {
+      const xValue = Math.min(Math.max(xgrid.data[i], 0), 1)
+      const yValue = Math.min(Math.max(ygrid.data[i], 0), 1)
+      xData[i] = xValue * 255
+      yData[i] = yValue * 255
+    }
+
+    const xgridTex = new THREE.DataTexture(xData, w, h)
+    xgridTex.format = THREE.RedFormat
+    xgridTex.type = THREE.UnsignedByteType
+    xgridTex.minFilter = THREE.NearestFilter
+    xgridTex.magFilter = THREE.NearestFilter
+    xgridTex.needsUpdate = true
+
+    const ygridTex = new THREE.DataTexture(yData, w, h)
+    ygridTex.format = THREE.RedFormat
+    ygridTex.type = THREE.UnsignedByteType
+    ygridTex.minFilter = THREE.NearestFilter
+    ygridTex.magFilter = THREE.NearestFilter
+    ygridTex.needsUpdate = true
+
+    xyMaterial.uniforms.volumeAspect.value = w / h
+    xyMaterial.uniforms.screenAspect.value = 2 / 2
+    xyMaterial.uniforms.xdata.value = xgridTex
+    xyMaterial.uniforms.ydata.value = ygridTex
 
     render()
 })

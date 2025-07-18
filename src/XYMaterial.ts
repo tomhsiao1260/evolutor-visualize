@@ -1,6 +1,6 @@
 import { ShaderMaterial, BackSide } from 'three';
 
-export class Shader extends ShaderMaterial {
+export class XYMaterial extends ShaderMaterial {
   constructor(params) {
     super({
         transparent: true,
@@ -9,7 +9,6 @@ export class Shader extends ShaderMaterial {
         uniforms: {
             volumeAspect : { value: 100 / 100 },
             screenAspect : { value: 2 / 2 },
-            voldata : { value: null },
             xdata : { value: null },
             ydata : { value: null },
         },
@@ -27,7 +26,6 @@ export class Shader extends ShaderMaterial {
             varying vec2 vUv;
             uniform float volumeAspect;
             uniform float screenAspect;
-            uniform sampler2D voldata;
             uniform sampler2D xdata;
             uniform sampler2D ydata;
 
@@ -36,8 +34,13 @@ export class Shader extends ShaderMaterial {
                 vec2 uv = vec2((vUv.x - 0.5), (vUv.y - 0.5) / aspect) + vec2(0.5);
                 if ( uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 ) return;
 
-                float intensity = texture2D(voldata, uv).r;
-                gl_FragColor = vec4(vec3(intensity), 1.0);
+                uv = vec2(1.0 - uv.y, uv.x);
+
+                float xValue = texture2D(xdata, uv).r;
+                float yValue = texture2D(ydata, uv).r;
+
+                if (yValue > 0.6 || yValue < 0.5) return;
+                gl_FragColor = vec4(1.0);
             }`,
     });
 
