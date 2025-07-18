@@ -13,6 +13,7 @@
     "vite": "^7.0.4"
   },
   "dependencies": {
+    "colormap": "^2.3.2",
     "three": "^0.178.0"
   }
 }
