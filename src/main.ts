@@ -6,7 +6,6 @@ import { NRRDLoader } from 'three/examples/jsm/loaders/NRRDLoader';
 import { TIFFLoader } from 'three/addons/loaders/TIFFLoader.js'
 import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min'
 import { Shader } from './shader.ts'
-import { XYMaterial } from './XYMaterial.ts'
 
 window.addEventListener('resize', () =>
 {
@@ -36,11 +35,6 @@ const geometry = new THREE.PlaneGeometry(2, 2, 100, 100)
 const mesh = new THREE.Mesh(geometry, material)
 scene.add(mesh)
 
-const xyMaterial = new XYMaterial()
-const xymesh = new THREE.Mesh(geometry, xyMaterial)
-xymesh.position.z = -0.1
-scene.add(xymesh)
-
 // renderer setup
 const canvas = document.querySelector('.webgl')
 const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: canvas })
@@ -62,6 +56,15 @@ function render() {
     renderer.render(scene, camera)
 }
 render()
+
+// GUI
+const gui = new GUI() 
+const params = { flatten: 0 }
+
+gui.add(params, 'flatten', 0, 1, 0.01).onChange(() => {
+  material.uniforms.flatten.value = params.flatten
+  render()
+})
 
 // Data
 const nrrdLoader = new NRRDLoader()
@@ -105,10 +108,8 @@ Promise.all([
     ygridTex.magFilter = THREE.NearestFilter
     ygridTex.needsUpdate = true
 
-    xyMaterial.uniforms.volumeAspect.value = w / h
-    xyMaterial.uniforms.screenAspect.value = 2 / 2
-    xyMaterial.uniforms.xdata.value = xgridTex
-    xyMaterial.uniforms.ydata.value = ygridTex
+    material.uniforms.xdata.value = xgridTex
+    material.uniforms.ydata.value = ygridTex
 
     render()
 })
