@@ -19,9 +19,13 @@ dist-ssr
 .DS_Store
 *.suo
 *.ntvs*
+
 *.njsproj
 *.sln
 *.sw?
 
 *.nrrd
 *.tif
+*.zarr
+
+public

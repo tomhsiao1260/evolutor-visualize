@@ -6,6 +6,7 @@ import { NRRDLoader } from 'three/examples/jsm/loaders/NRRDLoader';
 import { TIFFLoader } from 'three/addons/loaders/TIFFLoader.js'
 import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min'
 import { Shader } from './shader.ts'
+import { slice, openArray } from "zarr"
 
 window.addEventListener('resize', () =>
 {
@@ -78,47 +79,82 @@ gui.add(params, 'axis', 0, 1, 0.01).onChange(() => {
 const nrrdLoader = new NRRDLoader()
 const tiffLoader = new TIFFLoader()
 
-Promise.all([
-  tiffLoader.loadAsync('volume.tif'),
-  nrrdLoader.loadAsync('x.nrrd'),
-  nrrdLoader.loadAsync('y.nrrd')
-]).then(([volumeTex, xgrid, ygrid]) => {
-    const { width: w, height: h } = volumeTex.source.data
+loadData()
 
-    volumeTex.magFilter = THREE.NearestFilter
-    volumeTex.minFilter = THREE.LinearFilter
+async function loadData() {
+  const chunk = 128
 
-    material.uniforms.volumeAspect.value = w / h
-    material.uniforms.screenAspect.value = 2 / 2
-    material.uniforms.voldata.value = volumeTex
+  const volZarr = await openArray({
+    store: "http://localhost:5173/",
+    path: "scroll.zarr/2",
+    mode: "r"
+  })
 
-    const xData = new Uint8ClampedArray(w * h)
-    const yData = new Uint8ClampedArray(w * h)
-
-    for (let i = 0; i < w * h; ++i) {
-      const xValue = Math.min(Math.max(xgrid.data[i], 0), 1)
-      const yValue = Math.min(Math.max(ygrid.data[i], 0), 1)
-      xData[i] = xValue * 255
-      yData[i] = yValue * 255
+  const { data: volData, shape } = await volZarr.get([0, slice(7*chunk, 8*chunk), slice(7*chunk, 8*chunk)])
+  const [h, w] = shape
+  const volume = new Uint8ClampedArray(w * h)
+  for (let i = 0; i < h; ++i) {
+    for (let j = 0; j < w; ++j) {
+      volume[chunk*i+j] = volData[i][j] / 256
     }
+  }
 
-    const xgridTex = new THREE.DataTexture(xData, w, h)
-    xgridTex.format = THREE.RedFormat
-    xgridTex.type = THREE.UnsignedByteType
-    xgridTex.minFilter = THREE.NearestFilter
-    xgridTex.magFilter = THREE.NearestFilter
-    xgridTex.needsUpdate = true
+  const volumeTex = new THREE.DataTexture(volume, h, w)
+  volumeTex.format = THREE.RedFormat
+  volumeTex.type = THREE.UnsignedByteType
+  volumeTex.minFilter = THREE.LinearFilter
+  volumeTex.magFilter = THREE.NearestFilter
+  volumeTex.needsUpdate = true
 
-    const ygridTex = new THREE.DataTexture(yData, w, h)
-    ygridTex.format = THREE.RedFormat
-    ygridTex.type = THREE.UnsignedByteType
-    ygridTex.minFilter = THREE.NearestFilter
-    ygridTex.magFilter = THREE.NearestFilter
-    ygridTex.needsUpdate = true
+  material.uniforms.volumeAspect.value = w / h
+  material.uniforms.screenAspect.value = 2 / 2
+  material.uniforms.voldata.value = volumeTex
 
-    material.uniforms.xdata.value = xgridTex
-    material.uniforms.ydata.value = ygridTex
+  const uZarr = await openArray({
+    store: "http://localhost:5173/",
+    path: "scroll_u.zarr/2",
+    mode: "r"
+  })
+  const vZarr = await openArray({
+    store: "http://localhost:5173/",
+    path: "scroll_v.zarr/2",
+    mode: "r"
+  })
 
-    render()
-})
+  const { data: uData } = await uZarr.get([0, slice(7*chunk, 8*chunk), slice(7*chunk, 8*chunk)])
+  const u_coord = new Uint8ClampedArray(w * h)
+  for (let i = 0; i < h; ++i) {
+    for (let j = 0; j < w; ++j) {
+      u_coord[chunk*i+j] = uData[i][j] / 256
+    }
+  }
+  const { data: vData } = await vZarr.get([0, slice(7*chunk, 8*chunk), slice(7*chunk, 8*chunk)])
+  const v_coord = new Uint8ClampedArray(w * h)
+  for (let i = 0; i < h; ++i) {
+    for (let j = 0; j < w; ++j) {
+      v_coord[chunk*i+j] = vData[i][j] / 256
+    }
+  }
+
+  const uTex = new THREE.DataTexture(u_coord, h, w)
+  uTex.format = THREE.RedFormat
+  uTex.type = THREE.UnsignedByteType
+  uTex.minFilter = THREE.LinearFilter
+  uTex.magFilter = THREE.NearestFilter
+  uTex.needsUpdate = true
+
+  const vTex = new THREE.DataTexture(v_coord, h, w)
+  vTex.format = THREE.RedFormat
+  vTex.type = THREE.UnsignedByteType
+  vTex.minFilter = THREE.LinearFilter
+  vTex.magFilter = THREE.NearestFilter
+  vTex.needsUpdate = true
+
+  material.uniforms.udata.value = uTex
+  material.uniforms.vdata.value = vTex
+
+  render()
+}
+
+
 
