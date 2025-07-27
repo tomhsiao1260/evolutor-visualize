@@ -7,6 +7,7 @@ import { TIFFLoader } from 'three/addons/loaders/TIFFLoader.js'
 import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min'
 import { Shader } from './shader.ts'
 import { slice, openArray } from "zarr"
+import textureTab20 from './textures/tab20.png'
 
 window.addEventListener('resize', () =>
 {
@@ -16,6 +17,7 @@ window.addEventListener('resize', () =>
 
     // Update renderer
     renderer.setSize(window.innerWidth, window.innerHeight)
+    render()
 })
 
 // Scene
@@ -82,15 +84,18 @@ const tiffLoader = new TIFFLoader()
 loadData()
 
 async function loadData() {
-  const chunk = 128
+  const level = 2
+  const chunk = 128 * 2
+  const x0 = 896 + 0
+  const y0 = 896 + 0
 
   const volZarr = await openArray({
     store: "http://localhost:5173/",
-    path: "scroll.zarr/2",
+    path: `scroll.zarr/${level}`,
     mode: "r"
   })
 
-  const { data: volData, shape } = await volZarr.get([0, slice(7*chunk, 8*chunk), slice(7*chunk, 8*chunk)])
+  const { data: volData, shape } = await volZarr.get([0, slice(y0, y0+chunk), slice(x0, x0+chunk)])
   const [h, w] = shape
   const volume = new Uint8ClampedArray(w * h)
   for (let i = 0; i < h; ++i) {
@@ -112,23 +117,23 @@ async function loadData() {
 
   const uZarr = await openArray({
     store: "http://localhost:5173/",
-    path: "scroll_u.zarr/2",
+    path: `scroll_u.zarr/${level}`,
     mode: "r"
   })
   const vZarr = await openArray({
     store: "http://localhost:5173/",
-    path: "scroll_v.zarr/2",
+    path: `scroll_v.zarr/${level}`,
     mode: "r"
   })
 
-  const { data: uData } = await uZarr.get([0, slice(7*chunk, 8*chunk), slice(7*chunk, 8*chunk)])
+  const { data: uData } = await uZarr.get([0, slice(y0, y0+chunk), slice(x0, x0+chunk)])
   const u_coord = new Uint8ClampedArray(w * h)
   for (let i = 0; i < h; ++i) {
     for (let j = 0; j < w; ++j) {
       u_coord[chunk*i+j] = uData[i][j] / 256
     }
   }
-  const { data: vData } = await vZarr.get([0, slice(7*chunk, 8*chunk), slice(7*chunk, 8*chunk)])
+  const { data: vData } = await vZarr.get([0, slice(y0, y0+chunk), slice(x0, x0+chunk)])
   const v_coord = new Uint8ClampedArray(w * h)
   for (let i = 0; i < h; ++i) {
     for (let j = 0; j < w; ++j) {
@@ -152,6 +157,11 @@ async function loadData() {
 
   material.uniforms.udata.value = uTex
   material.uniforms.vdata.value = vTex
+
+  const tab20 = new THREE.TextureLoader().load(textureTab20)
+  tab20.minFilter = THREE.NearestFilter
+  tab20.maxFilter = THREE.NearestFilter
+  material.uniforms.tab20.value = tab20
 
   render()
 }
