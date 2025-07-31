@@ -5,3 +5,6 @@ scipy
 pynrrd
 tqdm
 scikit-image
+PyQt5
+streamlit
+cmap

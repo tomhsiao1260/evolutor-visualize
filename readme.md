@@ -8,9 +8,11 @@ In the data processing section, I modified Evolutor to work with the Ome-Zarr fo
 
 In the visualization section, you can interact with the processed Ome-Zarr data to understand the deformation process and compare the deformation differences across different Ome-Zarr hierarchies.
 
-# Generate Ome-Zarr for 2D scroll slice
+## Generate Ome-Zarr for 2D scroll slice
 
-Khartes wrote a script called [`scroll_to_ome.py`](https://github.com/KhartesViewer/scroll2zarr/blob/main/scroll_to_ome.py), which can generate Ome-Zarr format for a TIFF stack image. I made some small modifications to allow it to generate Ome-Zarr data for a single image. Take scroll1 `02000.tif` as an example.
+Khartes wrote a script called [scroll_to_ome.py](https://github.com/KhartesViewer/scroll2zarr/blob/main/scroll_to_ome.py), which can generate Ome-Zarr format for a TIFF stack image. I made some small modifications to allow it to generate Ome-Zarr data for a single image. Take scroll1 `02000.tif` as an example.
 ```python
 python scroll_to_ome.py ./evol1/02000.tif ./evol1/scroll.zarr
 ```
+
+## 
