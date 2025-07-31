@@ -84,10 +84,10 @@ const tiffLoader = new TIFFLoader()
 loadData()
 
 async function loadData() {
-  const level = 2
-  const chunk = 128 * 2
-  const x0 = 896 + 0
-  const y0 = 896 + 0
+  const level = 3
+  const chunk = 128 * 1
+  const x0 = 448 + 0
+  const y0 = 448 + 0
 
   const volZarr = await openArray({
     store: "http://localhost:5173/",
