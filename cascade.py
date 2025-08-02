@@ -9,37 +9,8 @@ from scipy import sparse
 from wind2d import ImageViewer
 import matplotlib.pyplot as plt
 
-images_u, index_u = [], 0
-images_v, index_v = [], 0
-
-def show_image():
-    plt.subplot(1, 2, 1)
-    colormap = cmap.Colormap("tab20", interpolation="nearest")
-    image = colormap(images_u[index_u])
-    plt.imshow(image, aspect='equal')
-    plt.axis('off')
-
-    plt.subplot(1, 2, 2)
-    colormap = cmap.Colormap("tab20", interpolation="nearest")
-    image = colormap(images_v[index_v])
-    plt.imshow(image, aspect='equal')
-    plt.axis('off')
-
-    plt.draw()
-
-def on_key(event):
-    global index_u, index_v
-    if event.key == ' ':  # space press
-        index_u += 1
-        index_v += 1
-        if index_u >= len(images_u):
-            plt.close()
-        else:
-            plt.clf()
-            show_image()
-
 def solveAxEqb(A, b):
-    print("solving Ax = b", A.shape, b.shape)
+    # print("solving Ax = b", A.shape, b.shape)
     At = A.transpose()
     AtA = At @ A
     # print("AtA", AtA.shape, sparse.issparse(AtA))
@@ -52,26 +23,8 @@ def solveAxEqb(A, b):
     lu = sparse.linalg.splu(AtA.tocsc())
     # print("lu created")
     x = lu.solve(Atb)
-    print("x", x.shape, x.dtype, x.min(), x.max())
+    # print("x", x.shape, x.dtype, x.min(), x.max())
     return x
-
-def createRadiusArray(umb, x, y, w, h):
-    iys, ixs = np.mgrid[y:y+h, x:x+w]
-    # print("mg", ixs.shape, iys.shape)
-    # iys gives row ids, ixs gives col ids
-    radsq = (ixs-umb[0])*(ixs-umb[0])+(iys-umb[1])*(iys-umb[1])
-    rad = np.sqrt(radsq)
-    # print("rad", rad.shape)
-    return rad
-
-def createThetaArray(umb, x, y, w, h):
-    umb[1] += .5
-    iys, ixs = np.mgrid[y:y+h, x:x+w]
-    # print("mg", ixs.shape, iys.shape)
-    # iys gives row ids, ixs gives col ids
-    theta = np.arctan2(iys-umb[1], ixs-umb[0])
-    # print("theta", theta.shape, theta.min(), theta.max())
-    return theta
 
 def solveUV(basew, st, smoothing_weight, axis='u'):
     vecu = st.vector_u
@@ -94,8 +47,104 @@ def solveUV(basew, st, smoothing_weight, axis='u'):
     b[basew.size:] = 0.
     x = solveAxEqb(A, b)
     out = x.reshape(basew.shape)
+
+    # h, w = out.shape
+    # y, x = np.mgrid[:h, :w]
+    # y, x = y/(h-1), x/(w-1)
+    # y, x = 2*y-1, 2*x-1
+    # y, x = 1-y**2, 1-x**2 # center: 1, edge: 0
+
+    # mask = np.minimum(y, x)
+    # out *= mask
     out += basew
     return out
+
+def divp1(s, c):
+    n = s // c
+    if s%c > 0:
+        n += 1
+    return n
+
+def createRadiusArray(umb, x, y, w, h):
+    iys, ixs = np.mgrid[y:y+h, x:x+w]
+    # print("mg", ixs.shape, iys.shape)
+    # iys gives row ids, ixs gives col ids
+    radsq = (ixs-umb[0])*(ixs-umb[0])+(iys-umb[1])*(iys-umb[1])
+    rad = np.sqrt(radsq)
+    # print("rad", rad.shape)
+    rad -= np.min(rad)
+    rad /= np.max(rad)
+    return rad
+
+def createThetaArray(umb, x, y, w, h):
+    umb[1] += .5
+    iys, ixs = np.mgrid[y:y+h, x:x+w]
+    # print("mg", ixs.shape, iys.shape)
+    # iys gives row ids, ixs gives col ids
+    theta = np.arctan2(iys-umb[1], ixs-umb[0])
+    # print("theta", theta.shape, theta.min(), theta.max())
+    theta -= np.min(theta)
+    theta /= np.max(theta)
+    return theta
+
+def createInitUV(zarr_store, umb, x0, y0, w0, h0):
+    max_level = len(zarr_store) - 1
+    images, images_u, images_v = [], [], []
+
+    for level in range(max_level+1):
+        x = divp1(x0, 2**level)
+        y = divp1(y0, 2**level)
+        w = divp1(w0, 2**level)
+        h = divp1(h0, 2**level)
+
+        image = zarr_store[level][0, y:y+h, x:x+w]
+
+        if level == 0:
+            image_u = createThetaArray(umb, x0, y0, w0, h0)
+            image_v = createRadiusArray(umb, x0, y0, w0, h0)
+        else:
+            image_u = images_u[level-1][::2, ::2].copy()
+            image_v = images_v[level-1][::2, ::2].copy()
+
+        images.append(image)
+        images_u.append(image_u)
+        images_v.append(image_v)
+
+    return images, images_u, images_v
+
+current_level = 0
+
+def on_key(event, images, images_u, images_v):
+    global current_level
+    if event.key == ' ':  # space press
+        current_level += 1
+        if current_level >= len(images):
+            plt.close()
+        else:
+            plt.clf()
+            show_image(images, images_u, images_v)
+
+def show_image(images, images_u, images_v):
+    global current_level
+    print('Result of level ', current_level)
+
+    plt.subplot(1, 3, 1)
+    plt.imshow(images[current_level], cmap='gray', aspect='equal')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    colormap = cmap.Colormap("tab20", interpolation="nearest")
+    image = colormap(images_u[current_level])
+    plt.imshow(image, aspect='equal')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    colormap = cmap.Colormap("tab20", interpolation="nearest")
+    image = colormap(images_v[current_level])
+    plt.imshow(image, aspect='equal')
+    plt.axis('off')
+
+    plt.draw()
 
 def main():
     parser = argparse.ArgumentParser(
@@ -108,96 +157,45 @@ def main():
 
     # input_ome_zarr = args.input_ome_zarr
 
-    top_level = 3
-    chunk = 128
+    level_start, chunk = 3, 128
     umb = np.array([4008, 2304]) # x, y
-    x0, y0, w0, h0 = 1000, 1000, chunk*(2**top_level), chunk*(2**top_level)
+    x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
 
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
+    images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
 
-    u_init = createThetaArray(umb, x0, y0, w0, h0)
-    u_init -= np.min(u_init)
-    u_init /= np.max(u_init)
-    v_init = createRadiusArray(umb, x0, y0, w0, h0)
-    v_init -= np.min(v_init)
-    v_init /= np.max(v_init)
+    for level in reversed(range(level_start+1)):
+        print('Top-Down: solving level ', level, '...')
 
-    for level in reversed(range(top_level+1)):
-        decimation = 2**level
+        for i in range(2**(level_start-level)):
+            for j in range(2**(level_start-level)):
+                w, h = chunk, chunk
+                x, y = w * i, h * j
 
-        col_u = []
-        col_v = []
-        for i in range(2**(top_level-level)):
-            row_u = []
-            row_v = []
-            for j in range(2**(top_level-level)):
-                w = chunk
-                h = chunk
-                x = x0 // decimation + w * i
-                y = y0 // decimation + h * j
-                data = z_scroll[level][0, y:y+h, x:x+w]
-                data = data.astype(np.float32) / 65535.
-                st = ST(data)
+                image = images[level][y:y+h, x:x+w]
+                image = image.astype(np.float32) / 65535.
+                st = ST(image)
                 st.computeEigens()
-                if len(images_u) == 0:
-                    basew_u = u_init[::decimation,::decimation][h*j:h*(j+1), w*i:w*(i+1)]
-                    basew_v = v_init[::decimation,::decimation][h*j:h*(j+1), w*i:w*(i+1)]
+
+                if level == level_start:
+                    basew_u = images_u[level]
+                    basew_v = images_v[level]
+                    basew_u = basew_u[y:y+h, x:x+w]
+                    basew_v = basew_v[y:y+h, x:x+w]
                 else:
-                    basew_u = cv2.resize(images_u[0], (0, 0), fx=2, fy=2)[h*j:h*(j+1), w*i:w*(i+1)]
-                    basew_v = cv2.resize(images_v[0], (0, 0), fx=2, fy=2)[h*j:h*(j+1), w*i:w*(i+1)]
-                data_u = solveUV(basew_u, st, smoothing_weight=.5, axis='u')
-                data_v = solveUV(basew_v, st, smoothing_weight=.5, axis='v')
-                row_u.append(data_u)
-                row_v.append(data_v)
-            col_u.append(np.vstack(row_u))
-            col_v.append(np.vstack(row_v))
-        image_u = np.hstack(col_u)
-        image_v = np.hstack(col_v)
-        image_u -= np.min(image_u)
-        image_u /= np.max(image_u)
-        image_v -= np.min(image_v)
-        image_v /= np.max(image_v)
-        images_u.insert(0, image_u)
-        images_v.insert(0, image_v)
+                    basew_u = cv2.resize(images_u[level+1], (0, 0), fx=2, fy=2)
+                    basew_v = cv2.resize(images_v[level+1], (0, 0), fx=2, fy=2)
+                    basew_u = basew_u[y:y+h, x:x+w]
+                    basew_v = basew_v[y:y+h, x:x+w]
 
-    # for level in range(1, top_level+1):
-    #     decimation = 2**level
-
-    #     col_u = []
-    #     col_v = []
-    #     for i in range(top_level-level+1):
-    #         row_u = []
-    #         row_v = []
-    #         for j in range(top_level-level+1):
-    #             w = chunk
-    #             h = chunk
-    #             x = x0 // decimation + w * i
-    #             y = y0 // decimation + h * j
-    #             data = z_scroll[level][0, y:y+h, x:x+w]
-    #             data = data.astype(np.float32) / 65535.
-    #             st = ST(data)
-    #             st.computeEigens()
-    #             print(level, len(images_u), i, j)
-    #             basew_u = images_u[level-1][::2,::2][h*j:h*(j+1), w*i:w*(i+1)]
-    #             basew_v = images_v[level-1][::2,::2][h*j:h*(j+1), w*i:w*(i+1)]
-    #             data_u = solveUV(basew_u, st, smoothing_weight=.5, axis='u')
-    #             data_v = solveUV(basew_v, st, smoothing_weight=.5, axis='v')
-    #             row_u.append(data_u)
-    #             row_v.append(data_v)
-    #         col_u.append(np.vstack(row_u))
-    #         col_v.append(np.vstack(row_v))
-    #     image_u = np.hstack(col_u)
-    #     image_v = np.hstack(col_v)
-    #     image_u -= np.min(image_u)
-    #     image_u /= np.max(image_u)
-    #     image_v -= np.min(image_v)
-    #     image_v /= np.max(image_v)
-    #     images_u.append(image_u)
-    #     images_v.append(image_v)
+                image_u_chunk = solveUV(basew_u, st, smoothing_weight=.5, axis='u')
+                image_v_chunk = solveUV(basew_v, st, smoothing_weight=.5, axis='v')
+                images_u[level][y:y+h, x:x+w] = image_u_chunk
+                images_v[level][y:y+h, x:x+w] = image_v_chunk
 
     plt.figure()
-    show_image()
-    plt.connect('key_press_event', on_key)
+    show_image(images, images_u, images_v)
+    plt.connect('key_press_event', lambda event: on_key(event, images, images_u, images_v))
     plt.show()
 
 if __name__ == '__main__':
