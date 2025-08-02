@@ -5,9 +5,12 @@ import cv2
 import argparse
 from st import ST
 import numpy as np
+from tqdm import tqdm
 from scipy import sparse
 from wind2d import ImageViewer
 import matplotlib.pyplot as plt
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import cpu_count
 
 def solveAxEqb(A, b):
     # print("solving Ax = b", A.shape, b.shape)
@@ -112,6 +115,16 @@ def createInitUV(zarr_store, umb, x0, y0, w0, h0):
 
     return images, images_u, images_v
 
+def updateUV(args):
+    image, image_u, image_v, image_u_ref, image_v_ref = args
+
+    image = image.astype(np.float32) / 65535.
+    st = ST(image)
+    st.computeEigens()
+
+    np.copyto(image_u, solveUV(image_u_ref, st, smoothing_weight=.5, axis='u'))
+    np.copyto(image_v, solveUV(image_v_ref, st, smoothing_weight=.5, axis='v'))
+
 current_level = 0
 
 def on_key(event, images, images_u, images_v):
@@ -126,7 +139,7 @@ def on_key(event, images, images_u, images_v):
 
 def show_image(images, images_u, images_v):
     global current_level
-    print('Result of level ', current_level)
+    print('Level ', current_level)
 
     plt.subplot(1, 3, 1)
     plt.imshow(images[current_level], cmap='gray', aspect='equal')
@@ -152,10 +165,16 @@ def main():
             description="")
     # parser.add_argument("input_ome_zarr",
     #                     help="input ome zarr directory")
+    parser.add_argument(
+            "--num_threads", 
+            type=int, 
+            default=cpu_count(), 
+            help="Advanced: Number of threads to use for processing. Default is number of CPUs")
 
     args = parser.parse_args()
 
     # input_ome_zarr = args.input_ome_zarr
+    num_threads = args.num_threads
 
     level_start, chunk = 3, 128
     umb = np.array([4008, 2304]) # x, y
@@ -165,7 +184,8 @@ def main():
     images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
 
     for level in reversed(range(level_start+1)):
-        print('Top-Down: solving level ', level, '...')
+        print('Top-Down: solving level ', level)
+        tasks = []
 
         for i in range(2**(level_start-level)):
             for j in range(2**(level_start-level)):
@@ -173,25 +193,22 @@ def main():
                 x, y = w * i, h * j
 
                 image = images[level][y:y+h, x:x+w]
-                image = image.astype(np.float32) / 65535.
-                st = ST(image)
-                st.computeEigens()
+                image_u = images_u[level][y:y+h, x:x+w]
+                image_v = images_v[level][y:y+h, x:x+w]
 
                 if level == level_start:
-                    basew_u = images_u[level]
-                    basew_v = images_v[level]
-                    basew_u = basew_u[y:y+h, x:x+w]
-                    basew_v = basew_v[y:y+h, x:x+w]
+                    image_u_ref = image_u
+                    image_v_ref = image_v
                 else:
-                    basew_u = cv2.resize(images_u[level+1], (0, 0), fx=2, fy=2)
-                    basew_v = cv2.resize(images_v[level+1], (0, 0), fx=2, fy=2)
-                    basew_u = basew_u[y:y+h, x:x+w]
-                    basew_v = basew_v[y:y+h, x:x+w]
+                    image_u_ref = cv2.resize(images_u[level+1], (0, 0), fx=2, fy=2)
+                    image_v_ref = cv2.resize(images_v[level+1], (0, 0), fx=2, fy=2)
+                    image_u_ref = image_u_ref[y:y+h, x:x+w]
+                    image_v_ref = image_v_ref[y:y+h, x:x+w]
 
-                image_u_chunk = solveUV(basew_u, st, smoothing_weight=.5, axis='u')
-                image_v_chunk = solveUV(basew_v, st, smoothing_weight=.5, axis='v')
-                images_u[level][y:y+h, x:x+w] = image_u_chunk
-                images_v[level][y:y+h, x:x+w] = image_v_chunk
+                tasks.append((image, image_u, image_v, image_u_ref, image_v_ref))
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
 
     plt.figure()
     show_image(images, images_u, images_v)
