@@ -11,6 +11,7 @@ from wind2d import ImageViewer
 import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import cpu_count
+from scipy.interpolate import interp1d
 
 def solveAxEqb(A, b):
     # print("solving Ax = b", A.shape, b.shape)
@@ -115,6 +116,16 @@ def createInitUV(zarr_store, umb, x0, y0, w0, h0):
 
     return images, images_u, images_v
 
+# def applyInterp(data, x, b):
+#     interp = np.interp(data.flatten(), x, b)
+#     return interp.reshape(data.shape)
+
+def applyInterp(data, x, b):
+    f = interp1d(x, b, kind='linear', fill_value='extrapolate', assume_sorted=True)
+    flat_data = data.flatten()
+    interp_vals = f(flat_data)
+    return interp_vals.reshape(data.shape)
+
 def updateUV(args):
     image, image_u, image_v, image_u_ref, image_v_ref = args
 
@@ -183,7 +194,7 @@ def main():
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
 
-    for level in reversed(range(level_start+1)):
+    for level in reversed(range(level_start)):
         print('Top-Down: solving level ', level)
         tasks = []
 
@@ -196,19 +207,153 @@ def main():
                 image_u = images_u[level][y:y+h, x:x+w]
                 image_v = images_v[level][y:y+h, x:x+w]
 
-                if level == level_start:
-                    image_u_ref = image_u
-                    image_v_ref = image_v
-                else:
-                    image_u_ref = cv2.resize(images_u[level+1], (0, 0), fx=2, fy=2)
-                    image_v_ref = cv2.resize(images_v[level+1], (0, 0), fx=2, fy=2)
-                    image_u_ref = image_u_ref[y:y+h, x:x+w]
-                    image_v_ref = image_v_ref[y:y+h, x:x+w]
+                image_u_ref = cv2.resize(images_u[level+1], (0, 0), fx=2, fy=2)
+                image_v_ref = cv2.resize(images_v[level+1], (0, 0), fx=2, fy=2)
+                image_u_ref = image_u_ref[y:y+h, x:x+w]
+                image_v_ref = image_v_ref[y:y+h, x:x+w]
 
                 tasks.append((image, image_u, image_v, image_u_ref, image_v_ref))
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
+
+    for level in range(level_start+1):
+        print('Bottom-Up: merging level ', level)
+
+        image_u = images_u[level].copy()
+        image_v = images_v[level].copy()
+
+        for i in range(2**(level_start-level)):
+            for j in range(2**(level_start-level)):
+                w, h = chunk, chunk
+                x, y = w * i, h * j
+
+        # for i in range(2**(level_start-level)):
+        #     for j in range(2**(level_start-level)):
+        #         w, h = chunk, chunk
+        #         x, y = w * i, h * j
+
+        #         h_full, w_full = images_u[level].shape
+
+        #         xi = images_v[level][y:y+h, x].copy()
+        #         bii = images_v[level][y:y+h, max(x-1, 0)].copy()
+        #         xi = xi[:, np.newaxis]
+        #         bii = bii[:, np.newaxis]
+        #         bi = (bii + xi) / 2
+        #         image_v_l = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
+
+        #         xi = images_u[level][y:y+h, x].copy()
+        #         bii = images_u[level][y:y+h, max(x-1, 0)].copy()
+        #         xi = xi[:, np.newaxis]
+        #         bii = bii[:, np.newaxis]
+        #         bi = (bii + xi) / 2
+        #         image_u_l = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
+        #         if (level == 0):
+        #             if (i == 4 and j == 7):
+        #                 print('right: ')
+        #                 print(xi[:5, 0])
+        #                 print(bii[:5, 0])
+        #                 print(bi[:5, 0])
+        #                 print(image_u_l[:, 0][:5])
+        #                 # image_u_r[:, :5] = 0
+        #                 # image_u_l[:, :5] = 0
+
+        #         xi = images_v[level][y:y+h, x+w-1].copy()
+        #         bii = images_v[level][y:y+h, min(x+w, w_full-1)].copy()
+        #         xi = xi[:, np.newaxis]
+        #         bii = bii[:, np.newaxis]
+        #         bi = (bii + xi) / 2
+        #         image_v_r = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
+
+        #         xi = images_u[level][y:y+h, x+w-1].copy()
+        #         bii = images_u[level][y:y+h, min(x+w, w_full-1)].copy()
+        #         xi = xi[:, np.newaxis]
+        #         bii = bii[:, np.newaxis]
+        #         bi = (bii + xi) / 2
+        #         image_u_r = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
+        #         if (level == 0):
+        #             if (i == 3 and j == 7):
+        #                 print('left: ')
+        #                 print(xi[:5, 0])
+        #                 print(bii[:5, 0])
+        #                 print(bi[:5, 0])
+        #                 print(image_u_r[:, -1][:5])
+        #                 # image_u_r[:, -5:] = 0
+        #                 # image_u_l[:, -5:] = 0
+        #         yc, xc = np.mgrid[0:h, 0:w]
+        #         yc, xc = yc/(h-1), xc/(w-1)
+        #         image_u[y:y+h, x:x+w] = (1-xc) * image_u_l + xc * image_u_r
+        #         image_v[y:y+h, x:x+w] = (1-xc) * image_v_l + xc * image_v_r
+
+        # images_u[level] = image_u
+        # images_v[level] = image_v
+
+        # image_u = images_u[level].copy()
+        # image_v = images_v[level].copy()
+
+        # for i in range(2**(level_start-level)):
+        #     for j in range(2**(level_start-level)):
+        #         w, h = chunk, chunk
+        #         x, y = w * i, h * j
+
+        #         h_full, w_full = images_u[level].shape
+
+        #         xi = images_v[level][y, x:x+w].copy()
+        #         bii = images_v[level][max(y-1, 0), x:x+w].copy()
+        #         xi = xi[np.newaxis, :]
+        #         bii = bii[np.newaxis, :]
+        #         bi = (bii + xi) / 2
+        #         image_v_t = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
+
+        #         xi = images_u[level][y, x:x+w].copy()
+        #         bii = images_u[level][max(y-1, 0), x:x+w].copy()
+        #         xi = xi[np.newaxis, :]
+        #         bii = bii[np.newaxis, :]
+        #         bi = (bii + xi) / 2
+        #         image_u_t = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
+        #         # image_u_t = applyInterp(images_u[level][y:y+h, x:x+w].copy(), xi, bi)
+        #         if (level == 0):
+        #             if (i == 2 and j == 4):
+        #                 print('top: ')
+        #                 print(xi[0, :5])
+        #                 print(bii[0, :5])
+        #                 print(bi[0, :5])
+        #                 print(image_u_t[0, :][:5])
+
+        #         xi = images_v[level][y+h-1, x:x+w].copy()
+        #         bii = images_v[level][min(y+h, h_full-1), x:x+w].copy()
+        #         xi = xi[np.newaxis, :]
+        #         bii = bii[np.newaxis, :]
+        #         bi = (bii + xi) / 2
+        #         image_v_b = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
+
+        #         xi = images_u[level][y+h-1, x:x+w].copy()
+        #         bii = images_u[level][min(y+h, h_full-1), x:x+w].copy()
+        #         xi = xi[np.newaxis, :]
+        #         bii = bii[np.newaxis, :]
+        #         bi = (bii + xi) / 2
+        #         image_u_b = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
+        #         # image_u_b = applyInterp(images_u[level][y:y+h, x:x+w].copy(), xi, bi)
+        #         if (level == 0):
+        #             if (i == 2 and j == 3):
+        #                 print('bottom: ')
+        #                 print(xi[0, :5])
+        #                 print(bii[0, :5])
+        #                 print(bi[0, :5])
+        #                 print(image_u_b[-1, :][:5])
+
+        #         yc, xc = np.mgrid[0:h, 0:w]
+        #         yc, xc = yc/(h-1), xc/(w-1)
+        #         image_u[y:y+h, x:x+w] = (1-yc) * image_u_t + yc * image_u_b
+        #         image_v[y:y+h, x:x+w] = (1-yc) * image_v_t + yc * image_v_b
+
+        # images_u[level] = image_u
+        # images_v[level] = image_v
+
+    # decimation = 2**level_start
+    # images_u[level_start] = images_u[0][::decimation,::decimation]
+    # images_v[level_start] = images_v[0][::decimation,::decimation]
+
 
     plt.figure()
     show_image(images, images_u, images_v)
