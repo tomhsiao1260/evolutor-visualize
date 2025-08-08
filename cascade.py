@@ -217,10 +217,9 @@ def main():
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
 
-    for level in range(level_start+1):
+    for level in range(level_start):
         print('Bottom-Up: merging level ', level)
 
-        image_u = images_u[level].copy()
         image_v = images_v[level].copy()
 
         for i in range(2**(level_start-level)):
@@ -228,131 +227,64 @@ def main():
                 w, h = chunk, chunk
                 x, y = w * i, h * j
 
-        # for i in range(2**(level_start-level)):
-        #     for j in range(2**(level_start-level)):
-        #         w, h = chunk, chunk
-        #         x, y = w * i, h * j
+                xi = images_v[level][y:y+h, x].copy()
+                if (i%2 == 0):
+                    bi = xi
+                else:
+                    bi = images_v[level][y:y+h, x-1].copy()
+                    bi = (bi + xi) / 2
+                xi = xi[:, np.newaxis]
+                bi = bi[:, np.newaxis]
+                image_v_l = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
 
-        #         h_full, w_full = images_u[level].shape
+                xi = images_v[level][y:y+h, x+w-1].copy()
+                if (i%2 == 0):
+                    bi = images_v[level][y:y+h, x+w].copy()
+                    bi = (bi + xi) / 2
+                else:
+                    bi = xi
+                xi = xi[:, np.newaxis]
+                bi = bi[:, np.newaxis]
+                image_v_r = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
 
-        #         xi = images_v[level][y:y+h, x].copy()
-        #         bii = images_v[level][y:y+h, max(x-1, 0)].copy()
-        #         xi = xi[:, np.newaxis]
-        #         bii = bii[:, np.newaxis]
-        #         bi = (bii + xi) / 2
-        #         image_v_l = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
+                yc, xc = np.mgrid[0:h, 0:w]
+                yc, xc = yc/(h-1), xc/(w-1)
+                image_v[y:y+h, x:x+w] = (1-xc) * image_v_l + xc * image_v_r
 
-        #         xi = images_u[level][y:y+h, x].copy()
-        #         bii = images_u[level][y:y+h, max(x-1, 0)].copy()
-        #         xi = xi[:, np.newaxis]
-        #         bii = bii[:, np.newaxis]
-        #         bi = (bii + xi) / 2
-        #         image_u_l = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
-        #         if (level == 0):
-        #             if (i == 4 and j == 7):
-        #                 print('right: ')
-        #                 print(xi[:5, 0])
-        #                 print(bii[:5, 0])
-        #                 print(bi[:5, 0])
-        #                 print(image_u_l[:, 0][:5])
-        #                 # image_u_r[:, :5] = 0
-        #                 # image_u_l[:, :5] = 0
+        images_v[level] = image_v
 
-        #         xi = images_v[level][y:y+h, x+w-1].copy()
-        #         bii = images_v[level][y:y+h, min(x+w, w_full-1)].copy()
-        #         xi = xi[:, np.newaxis]
-        #         bii = bii[:, np.newaxis]
-        #         bi = (bii + xi) / 2
-        #         image_v_r = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
+        image_v = images_v[level].copy()
 
-        #         xi = images_u[level][y:y+h, x+w-1].copy()
-        #         bii = images_u[level][y:y+h, min(x+w, w_full-1)].copy()
-        #         xi = xi[:, np.newaxis]
-        #         bii = bii[:, np.newaxis]
-        #         bi = (bii + xi) / 2
-        #         image_u_r = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
-        #         if (level == 0):
-        #             if (i == 3 and j == 7):
-        #                 print('left: ')
-        #                 print(xi[:5, 0])
-        #                 print(bii[:5, 0])
-        #                 print(bi[:5, 0])
-        #                 print(image_u_r[:, -1][:5])
-        #                 # image_u_r[:, -5:] = 0
-        #                 # image_u_l[:, -5:] = 0
-        #         yc, xc = np.mgrid[0:h, 0:w]
-        #         yc, xc = yc/(h-1), xc/(w-1)
-        #         image_u[y:y+h, x:x+w] = (1-xc) * image_u_l + xc * image_u_r
-        #         image_v[y:y+h, x:x+w] = (1-xc) * image_v_l + xc * image_v_r
+        for i in range(2**(level_start-level)):
+            for j in range(2**(level_start-level)):
+                w, h = chunk, chunk
+                x, y = w * i, h * j
 
-        # images_u[level] = image_u
-        # images_v[level] = image_v
+                xi = images_v[level][y, x:x+w].copy()
+                if (j%2 == 0):
+                    bi = xi
+                else:
+                    bi = images_v[level][y-1, x:x+w].copy()
+                    bi = (bi + xi) / 2
+                xi = xi[:, np.newaxis]
+                bi = bi[:, np.newaxis]
+                image_v_t = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
 
-        # image_u = images_u[level].copy()
-        # image_v = images_v[level].copy()
+                xi = images_v[level][y+h-1, x:x+w].copy()
+                if (j%2 == 0):
+                    bi = images_v[level][y+h, x:x+w].copy()
+                    bi = (bi + xi) / 2
+                else:
+                    bi = xi
+                xi = xi[:, np.newaxis]
+                bi = bi[:, np.newaxis]
+                image_v_b = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
 
-        # for i in range(2**(level_start-level)):
-        #     for j in range(2**(level_start-level)):
-        #         w, h = chunk, chunk
-        #         x, y = w * i, h * j
+                yc, xc = np.mgrid[0:h, 0:w]
+                yc, xc = yc/(h-1), xc/(w-1)
+                image_v[y:y+h, x:x+w] = (1-yc) * image_v_t + yc * image_v_b
 
-        #         h_full, w_full = images_u[level].shape
-
-        #         xi = images_v[level][y, x:x+w].copy()
-        #         bii = images_v[level][max(y-1, 0), x:x+w].copy()
-        #         xi = xi[np.newaxis, :]
-        #         bii = bii[np.newaxis, :]
-        #         bi = (bii + xi) / 2
-        #         image_v_t = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
-
-        #         xi = images_u[level][y, x:x+w].copy()
-        #         bii = images_u[level][max(y-1, 0), x:x+w].copy()
-        #         xi = xi[np.newaxis, :]
-        #         bii = bii[np.newaxis, :]
-        #         bi = (bii + xi) / 2
-        #         image_u_t = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
-        #         # image_u_t = applyInterp(images_u[level][y:y+h, x:x+w].copy(), xi, bi)
-        #         if (level == 0):
-        #             if (i == 2 and j == 4):
-        #                 print('top: ')
-        #                 print(xi[0, :5])
-        #                 print(bii[0, :5])
-        #                 print(bi[0, :5])
-        #                 print(image_u_t[0, :][:5])
-
-        #         xi = images_v[level][y+h-1, x:x+w].copy()
-        #         bii = images_v[level][min(y+h, h_full-1), x:x+w].copy()
-        #         xi = xi[np.newaxis, :]
-        #         bii = bii[np.newaxis, :]
-        #         bi = (bii + xi) / 2
-        #         image_v_b = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
-
-        #         xi = images_u[level][y+h-1, x:x+w].copy()
-        #         bii = images_u[level][min(y+h, h_full-1), x:x+w].copy()
-        #         xi = xi[np.newaxis, :]
-        #         bii = bii[np.newaxis, :]
-        #         bi = (bii + xi) / 2
-        #         image_u_b = images_u[level][y:y+h, x:x+w].copy() + (bi - xi)
-        #         # image_u_b = applyInterp(images_u[level][y:y+h, x:x+w].copy(), xi, bi)
-        #         if (level == 0):
-        #             if (i == 2 and j == 3):
-        #                 print('bottom: ')
-        #                 print(xi[0, :5])
-        #                 print(bii[0, :5])
-        #                 print(bi[0, :5])
-        #                 print(image_u_b[-1, :][:5])
-
-        #         yc, xc = np.mgrid[0:h, 0:w]
-        #         yc, xc = yc/(h-1), xc/(w-1)
-        #         image_u[y:y+h, x:x+w] = (1-yc) * image_u_t + yc * image_u_b
-        #         image_v[y:y+h, x:x+w] = (1-yc) * image_v_t + yc * image_v_b
-
-        # images_u[level] = image_u
-        # images_v[level] = image_v
-
-    # decimation = 2**level_start
-    # images_u[level_start] = images_u[0][::decimation,::decimation]
-    # images_v[level_start] = images_v[0][::decimation,::decimation]
+        images_v[level] = image_v
 
 
     plt.figure()
