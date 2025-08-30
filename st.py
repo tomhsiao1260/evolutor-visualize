@@ -252,13 +252,13 @@ class ST(object):
     def vector_u_interpolator(self, nv):
         # if nv is not None:
         #     raise ValueError("Value must be None")
-        print("replace vui")
+        # print("replace vui")
         self.vector_u_interpolator_ = nv
 
     @property
     def vector_v_interpolator(self):
         if self.vector_v_interpolator_ is None:
-            print("create vvi")
+            # print("create vvi")
             self.vector_v_interpolator_ = ST.createVectorInterpolator(self.vector_v)
         return self.vector_v_interpolator_
 
@@ -266,7 +266,7 @@ class ST(object):
     def vector_v_interpolator(self, nv):
         # if nv is not None:
         #     raise ValueError("Value must be None")
-        print("replace vvi")
+        # print("replace vvi")
         self.vector_v_interpolator_ = nv
 
     @property

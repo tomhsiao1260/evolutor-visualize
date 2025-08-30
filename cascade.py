@@ -146,13 +146,9 @@ def applyInterp(data, x, b):
     return interp_vals.reshape(data.shape)
 
 def updateUV(args):
-    image, image_u, image_v, image_u_ref, image_v_ref = args
+    image_u, image_v, st = args
 
-    image = image.astype(np.float32) / 65535.
-    st = ST(image)
-    st.computeEigens()
-
-    v0 = solveUV0(image_v_ref, st, smoothing_weight=.5, axis='v')
+    v0 = solveUV0(image_v, st, smoothing_weight=.5, axis='v')
     v0 -= np.min(v0)
     v0 /= np.max(v0)
 
@@ -162,6 +158,15 @@ def updateUV(args):
     v1 -= np.min(v1)
     v1 /= np.max(v1)
 
+    uvec, ucoh = ImageViewer.synthesizeUVecArray(v1)
+    st.vector_u = uvec
+    st.coherence = ucoh
+
+    u1 = solveUV1(image_u, st, smoothing_weight=.2, cross_weight=.7, axis='u')
+    u1 -= np.min(u1)
+    u1 /= np.max(u1)
+
+    np.copyto(image_u, u1)
     np.copyto(image_v, v1)
 
 current_level = 0
@@ -215,14 +220,14 @@ def main():
     # input_ome_zarr = args.input_ome_zarr
     num_threads = args.num_threads
 
-    level_start, chunk = 3, 128
     umb = np.array([4008, 2304]) # x, y
+    level_start, chunk = 3, 128
     x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
 
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
 
-    for level in reversed(range(level_start)):
+    for level in reversed(range(level_start+1)):
         print('Top-Down: solving level ', level)
         tasks = []
 
@@ -235,12 +240,11 @@ def main():
                 image_u = images_u[level][y:y+h, x:x+w]
                 image_v = images_v[level][y:y+h, x:x+w]
 
-                image_u_ref = cv2.resize(images_u[level+1], (0, 0), fx=2, fy=2)
-                image_v_ref = cv2.resize(images_v[level+1], (0, 0), fx=2, fy=2)
-                image_u_ref = image_u_ref[y:y+h, x:x+w]
-                image_v_ref = image_v_ref[y:y+h, x:x+w]
+                image = image.astype(np.float32) / 65535.
+                st = ST(image)
+                st.computeEigens()
 
-                tasks.append((image, image_u, image_v, image_u_ref, image_v_ref))
+                tasks.append((image_u, image_v, st))
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))

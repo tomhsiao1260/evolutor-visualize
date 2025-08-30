@@ -1464,22 +1464,16 @@ class ImageViewer(QLabel):
         print(x.shape, y.shape, xy.shape)
         return xy
 
-    def computeGrad(self, arr):
-        decimation = self.decimation
+    @staticmethod
+    def computeGrad(arr):
         oldshape = arr.shape
-        if decimation > 1:
-            arr = arr.copy()[::decimation, ::decimation]
         shape = arr.shape
         sparse_grad = ImageViewer.sparseGrad(shape)
 
-        # NOTE division by decimation
-        grad_flat = (sparse_grad @ arr.flatten()) / decimation
+        grad_flat = (sparse_grad @ arr.flatten())
         grad = grad_flat.reshape(shape[0], shape[1], 2)
         gradx = grad[:,:,0]
         grady = grad[:,:,1]
-        if decimation > 1:
-            gradx = cv2.resize(gradx, (oldshape[1], oldshape[0]), interpolation=cv2.INTER_LINEAR)
-            grady = cv2.resize(grady, (oldshape[1], oldshape[0]), interpolation=cv2.INTER_LINEAR)
         return gradx, grady
 
     def printArray(self, arr, ixy):
@@ -1519,8 +1513,8 @@ class ImageViewer(QLabel):
         # print("delr", delr[iy,ix])
         dot = (uvec*delr).sum(axis=2)
         # print("dot", dot[iy,ix])
-        print("dots", (dot<0).sum())
-        print("not dots", (dot>=0).sum())
+        # print("dots", (dot<0).sum())
+        # print("not dots", (dot>=0).sum())
         st.vector_u[dot<0] *= -1
         st.vector_v[dot<0] *= -1
 
@@ -1606,8 +1600,9 @@ class ImageViewer(QLabel):
 
     # given a radius array, create u vectors from the
     # normalized gradients of that array.
-    def synthesizeUVecArray(self, rad):
-        gradx, grady = self.computeGrad(rad)
+    @staticmethod
+    def synthesizeUVecArray(rad):
+        gradx, grady = ImageViewer.computeGrad(rad)
         uvec = np.stack((gradx, grady), axis=2)
         # print("suvec", uvec.shape)
         luvec = np.sqrt((uvec*uvec).sum(axis=2))
