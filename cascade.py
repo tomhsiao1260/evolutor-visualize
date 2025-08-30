@@ -30,7 +30,7 @@ def solveAxEqb(A, b):
     # print("x", x.shape, x.dtype, x.min(), x.max())
     return x
 
-def solveUV(basew, st, smoothing_weight, axis='u'):
+def solveUV0(basew, st, smoothing_weight, axis='u'):
     vecu = st.vector_u
     coh = st.coherence[:,:,np.newaxis]
     wvecu = coh*vecu
@@ -52,6 +52,34 @@ def solveUV(basew, st, smoothing_weight, axis='u'):
     x = solveAxEqb(A, b)
     out = x.reshape(basew.shape)
     out += basew
+    return out
+
+def solveUV1(basew, st, smoothing_weight, cross_weight, axis='u'):
+    icw = 1.-cross_weight
+    uvec = st.vector_u
+    coh = st.coherence.copy()
+    coh = coh[:,:,np.newaxis]
+    wuvec = coh*uvec
+
+    shape = wuvec.shape[:2]
+    sparse_u_cross_g = ImageViewer.sparseVecOpGrad(wuvec, is_cross=True)
+    sparse_u_dot_g = ImageViewer.sparseVecOpGrad(wuvec, is_cross=False)
+    sparse_grad = ImageViewer.sparseGrad(shape)
+    sgx, sgy = ImageViewer.sparseGrad(shape, interleave=False)
+    hxx = sgx.transpose() @ sgx
+    hyy = sgy.transpose() @ sgy
+    hxy = sgx @ sgy
+
+    A = sparse.vstack((icw*sparse_u_dot_g, cross_weight*sparse_u_cross_g, smoothing_weight*hxx, smoothing_weight*hyy))
+
+    b = np.zeros((A.shape[0]), dtype=np.float64)
+    if axis == 'v':
+        b[:basew.size] = 1.*coh.flatten()*icw
+    else:
+        b[basew.size:2*basew.size] = 1.*coh.flatten()*icw
+
+    x = solveAxEqb(A, b)
+    out = x.reshape(basew.shape)
     return out
 
 def divp1(s, c):
@@ -124,11 +152,17 @@ def updateUV(args):
     st = ST(image)
     st.computeEigens()
 
-    v0 = solveUV(image_v_ref, st, smoothing_weight=.5, axis='v')
+    v0 = solveUV0(image_v_ref, st, smoothing_weight=.5, axis='v')
+    v0 -= np.min(v0)
+    v0 /= np.max(v0)
 
     ImageViewer.alignUVVec(v0, st)
 
-    np.copyto(image_v, v0)
+    v1 = solveUV1(v0, st, smoothing_weight=.2, cross_weight=.7, axis='v')
+    v1 -= np.min(v1)
+    v1 /= np.max(v1)
+
+    np.copyto(image_v, v1)
 
 current_level = 0
 
