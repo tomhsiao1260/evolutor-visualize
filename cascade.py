@@ -51,15 +51,6 @@ def solveUV(basew, st, smoothing_weight, axis='u'):
     b[basew.size:] = 0.
     x = solveAxEqb(A, b)
     out = x.reshape(basew.shape)
-
-    # h, w = out.shape
-    # y, x = np.mgrid[:h, :w]
-    # y, x = y/(h-1), x/(w-1)
-    # y, x = 2*y-1, 2*x-1
-    # y, x = 1-y**2, 1-x**2 # center: 1, edge: 0
-
-    # mask = np.minimum(y, x)
-    # out *= mask
     out += basew
     return out
 
@@ -133,8 +124,11 @@ def updateUV(args):
     st = ST(image)
     st.computeEigens()
 
-    np.copyto(image_u, solveUV(image_u_ref, st, smoothing_weight=.5, axis='u'))
-    np.copyto(image_v, solveUV(image_v_ref, st, smoothing_weight=.5, axis='v'))
+    v0 = solveUV(image_v_ref, st, smoothing_weight=.5, axis='v')
+
+    ImageViewer.alignUVVec(v0, st)
+
+    np.copyto(image_v, v0)
 
 current_level = 0
 
@@ -216,75 +210,6 @@ def main():
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
-
-    for level in range(level_start):
-        print('Bottom-Up: merging level ', level)
-
-        image_v = images_v[level].copy()
-
-        for i in range(2**(level_start-level)):
-            for j in range(2**(level_start-level)):
-                w, h = chunk, chunk
-                x, y = w * i, h * j
-
-                xi = images_v[level][y:y+h, x].copy()
-                if (i%2 == 0):
-                    bi = xi
-                else:
-                    bi = images_v[level][y:y+h, x-1].copy()
-                    bi = (bi + xi) / 2
-                xi = xi[:, np.newaxis]
-                bi = bi[:, np.newaxis]
-                image_v_l = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
-
-                xi = images_v[level][y:y+h, x+w-1].copy()
-                if (i%2 == 0):
-                    bi = images_v[level][y:y+h, x+w].copy()
-                    bi = (bi + xi) / 2
-                else:
-                    bi = xi
-                xi = xi[:, np.newaxis]
-                bi = bi[:, np.newaxis]
-                image_v_r = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
-
-                yc, xc = np.mgrid[0:h, 0:w]
-                yc, xc = yc/(h-1), xc/(w-1)
-                image_v[y:y+h, x:x+w] = (1-xc) * image_v_l + xc * image_v_r
-
-        images_v[level] = image_v
-
-        image_v = images_v[level].copy()
-
-        for i in range(2**(level_start-level)):
-            for j in range(2**(level_start-level)):
-                w, h = chunk, chunk
-                x, y = w * i, h * j
-
-                xi = images_v[level][y, x:x+w].copy()
-                if (j%2 == 0):
-                    bi = xi
-                else:
-                    bi = images_v[level][y-1, x:x+w].copy()
-                    bi = (bi + xi) / 2
-                xi = xi[:, np.newaxis]
-                bi = bi[:, np.newaxis]
-                image_v_t = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
-
-                xi = images_v[level][y+h-1, x:x+w].copy()
-                if (j%2 == 0):
-                    bi = images_v[level][y+h, x:x+w].copy()
-                    bi = (bi + xi) / 2
-                else:
-                    bi = xi
-                xi = xi[:, np.newaxis]
-                bi = bi[:, np.newaxis]
-                image_v_b = images_v[level][y:y+h, x:x+w].copy() + (bi - xi)
-
-                yc, xc = np.mgrid[0:h, 0:w]
-                yc, xc = yc/(h-1), xc/(w-1)
-                image_v[y:y+h, x:x+w] = (1-yc) * image_v_t + yc * image_v_b
-
-        images_v[level] = image_v
 
 
     plt.figure()

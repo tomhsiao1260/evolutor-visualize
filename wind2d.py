@@ -1509,11 +1509,11 @@ class ImageViewer(QLabel):
     # given an array filled with radius values, align
     # the structure tensor u vector with the gradient of
     # the radius
-    def alignUVVec(self, rad0):
-        st = self.main_window.st
+    @staticmethod
+    def alignUVVec(rad0, st):
         uvec = st.vector_u
         shape = uvec.shape[:2]
-        sparse_grad = self.sparseGrad(shape)
+        sparse_grad = ImageViewer.sparseGrad(shape)
         delr_flat = sparse_grad @ rad0.flatten()
         delr = delr_flat.reshape(uvec.shape)
         # print("delr", delr[iy,ix])
