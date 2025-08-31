@@ -100,12 +100,14 @@ def createRadiusArray(umb, x, y, w, h):
     return rad
 
 def createThetaArray(umb, x, y, w, h):
+    return np.zeros((h, w))
+
     umb[1] += .5
     iys, ixs = np.mgrid[y:y+h, x:x+w]
     # print("mg", ixs.shape, iys.shape)
     # iys gives row ids, ixs gives col ids
     theta = np.arctan2(iys-umb[1], ixs-umb[0])
-    # print("theta", theta.shape, theta.min(), theta.max())
+    print("theta", theta.shape, theta.min(), theta.max())
     theta -= np.min(theta)
     theta /= np.max(theta)
     return theta
@@ -135,16 +137,6 @@ def createInitUV(zarr_store, umb, x0, y0, w0, h0):
 
     return images, images_u, images_v
 
-# def applyInterp(data, x, b):
-#     interp = np.interp(data.flatten(), x, b)
-#     return interp.reshape(data.shape)
-
-def applyInterp(data, x, b):
-    f = interp1d(x, b, kind='linear', fill_value='extrapolate', assume_sorted=True)
-    flat_data = data.flatten()
-    interp_vals = f(flat_data)
-    return interp_vals.reshape(data.shape)
-
 def updateUV(args):
     image_u, image_v, st = args
 
@@ -159,10 +151,10 @@ def updateUV(args):
     v1 /= np.max(v1)
 
     uvec, ucoh = ImageViewer.synthesizeUVecArray(v1)
-    st.vector_u = uvec
-    st.coherence = ucoh
+    np.copyto(st.vector_u, uvec)
+    # np.copyto(st.coherence, ucoh)
 
-    u1 = solveUV1(image_u, st, smoothing_weight=.2, cross_weight=.7, axis='u')
+    u1 = solveUV1(image_u, st, smoothing_weight=.5, cross_weight=.5, axis='u')
     u1 -= np.min(u1)
     u1 /= np.max(u1)
 
@@ -180,6 +172,8 @@ def on_key(event, images, images_u, images_v):
         else:
             plt.clf()
             show_image(images, images_u, images_v)
+
+class Struct: pass
 
 def show_image(images, images_u, images_v):
     global current_level
@@ -222,12 +216,23 @@ def main():
 
     umb = np.array([4008, 2304]) # x, y
     level_start, chunk = 3, 128
-    x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
+    # x0, y0, w0, h0 = 3000, 3000, chunk*(2**level_start), chunk*(2**level_start)
+    x0, y0, w0, h0 = 2000, 2000, chunk*(2**level_start), chunk*(2**level_start)
+    # x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
 
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
+    images_st = []
+
+    print('Compute Eigens ...')
+    for image in tqdm(images):
+        image = image.astype(np.float32) / 65535.
+        st = ST(image)
+        st.computeEigens()
+        images_st.append(st)
 
     for level in reversed(range(level_start+1)):
+        if (level != 0 and level != level_start): continue
         print('Top-Down: solving level ', level)
         tasks = []
 
@@ -240,14 +245,156 @@ def main():
                 image_u = images_u[level][y:y+h, x:x+w]
                 image_v = images_v[level][y:y+h, x:x+w]
 
-                image = image.astype(np.float32) / 65535.
-                st = ST(image)
-                st.computeEigens()
+                st = Struct()
+                st.vector_u = images_st[level].vector_u[y:y+h, x:x+w]
+                st.vector_v = images_st[level].vector_v[y:y+h, x:x+w]
+                st.coherence = images_st[level].coherence[y:y+h, x:x+w]
 
                 tasks.append((image_u, image_v, st))
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
+
+
+    # for level in reversed(range(level_start+1)):
+    #     if (level != level_start): continue
+    #     # if (level != 0 and level != level_start): continue
+    #     print('Top-Down: solving level ', level)
+    #     tasks = []
+
+    #     for i in range(2**(level_start-level)):
+    #         for j in range(2**(level_start-level)):
+    #             w, h = chunk, chunk
+    #             x, y = w * i, h * j
+
+    #             image_u = images_u[level][y:y+h, x:x+w]
+    #             image_v = images_v[level][y:y+h, x:x+w]
+
+    #             if (level == level_start):
+    #                 uvec_ = images_st[level].vector_u[y:y+h, x:x+w]
+    #                 vvec_ = images_st[level].vector_v[y:y+h, x:x+w]
+
+    #                 uvec = cv2.resize(images_st[0].vector_u, (h, w))
+    #                 vvec = cv2.resize(images_st[0].vector_v, (h, w))
+    #                 coh = cv2.resize(images_st[0].coherence, (h, w))[:,:,np.newaxis]
+
+    #                 images_st[level].vector_u[y:y+h, x:x+w] = coh * uvec + (1-coh) * uvec_
+    #                 images_st[level].vector_v[y:y+h, x:x+w] = coh * vvec + (1-coh) * vvec_
+
+    #             if (level == 0):
+    #                 uvec_ = images_st[level].vector_u[y:y+h, x:x+w]
+    #                 vvec_ = images_st[level].vector_v[y:y+h, x:x+w]
+
+    #                 uvec = cv2.resize(images_st[level_start].vector_u[y//8:(y+h)//8, x//8:(x+w)//8], (h, w))
+    #                 vvec = cv2.resize(images_st[level_start].vector_v[y//8:(y+h)//8, x//8:(x+w)//8], (h, w))
+    #                 coh = cv2.resize(images_st[level_start].coherence[y//8:(y+h)//8, x//8:(x+w)//8], (h, w))[:,:,np.newaxis]
+
+    #                 images_st[level].vector_u[y:y+h, x:x+w] = coh * uvec_ + (1-coh) * uvec
+    #                 images_st[level].vector_v[y:y+h, x:x+w] = coh * vvec_ + (1-coh) * vvec
+
+    #             st = Struct()
+    #             st.vector_u = images_st[level].vector_u[y:y+h, x:x+w]
+    #             st.vector_v = images_st[level].vector_v[y:y+h, x:x+w]
+    #             st.coherence = images_st[level].coherence[y:y+h, x:x+w]
+
+    #             tasks.append((image_u, image_v, st))
+
+    #     with ThreadPoolExecutor(max_workers=num_threads) as executor:
+    #         list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
+
+    for level in range(level_start):
+        if (level != 0 and level != 1): continue
+        # if (level != 0): continue
+        print('Bottom-Up: merging level ', level)
+
+        aa = images_v[0].copy()
+        bb = images_u[0].copy()
+
+        for i in range(2**(level_start-level)):
+            for j in range(2**(level_start-level)):
+                w, h = chunk * (2**level), chunk * (2**level)
+                x, y = w * i, h * j
+
+                image_v = images_v[0][y:y+h, x:x+w]
+
+                if (i%2 == 0):
+                    xi = images_v[0][y:y+h, x+w-1]
+                    bi = images_v[0][y:y+h, x+w]
+                    bi = (bi + xi) / 2
+                else:
+                    xi = images_v[0][y:y+h, x]
+                    bi = images_v[0][y:y+h, x-1]
+                    bi = (bi + xi) / 2
+
+                aa[y:y+h, x:x+w] = image_v + (bi - xi)
+
+                image_u = images_u[0][y:y+h, x:x+w]
+
+                if (i%2 == 0):
+                    xi = images_u[0][y:y+h, x+w-1]
+                    bi = images_u[0][y:y+h, x+w]
+                    bi = (bi + xi) / 2
+                else:
+                    xi = images_u[0][y:y+h, x]
+                    bi = images_u[0][y:y+h, x-1]
+                    bi = (bi + xi) / 2
+
+                bb[y:y+h, x:x+w] = image_u + (bi - xi)
+
+        images_v[0] = aa
+        images_u[0] = bb
+
+        aa = images_v[0].copy()
+        bb = images_u[0].copy()
+
+        for i in range(2**(level_start-level)):
+            for j in range(2**(level_start-level)):
+                w, h = chunk * (2**level), chunk * (2**level)
+                x, y = w * i, h * j
+
+                image_v = images_v[0][y:y+h, x:x+w]
+
+                if (j%2 == 0):
+                    xi = images_v[0][y+h-1, x:x+w]
+                    bi = images_v[0][y+h, x:x+w]
+                    bi = (bi + xi) / 2
+                else:
+                    xi = images_v[0][y, x:x+w]
+                    bi = images_v[0][y-1, x:x+w]
+                    bi = (bi + xi) / 2
+
+                aa[y:y+h, x:x+w] = image_v + (bi - xi)
+
+                image_u = images_u[0][y:y+h, x:x+w]
+
+                if (j%2 == 0):
+                    xi = images_u[0][y+h-1, x:x+w]
+                    bi = images_u[0][y+h, x:x+w]
+                    bi = (bi + xi) / 2
+                else:
+                    xi = images_u[0][y, x:x+w]
+                    bi = images_u[0][y-1, x:x+w]
+                    bi = (bi + xi) / 2
+
+                bb[y:y+h, x:x+w] = image_u + (bi - xi)
+
+        images_v[0] = aa
+        images_u[0] = bb
+
+        for i in range(2**(level_start-level-1)):
+            for j in range(2**(level_start-level-1)):
+                w, h = chunk * (2**level) * 2, chunk * (2**level) * 2
+                x, y = w * i, h * j
+
+                image_v = images_v[0][y:y+h, x:x+w]
+                image_v -= np.min(image_v)
+                image_v /= np.max(image_v)
+                images_v[0][y:y+h, x:x+w] = image_v
+
+                image_u = images_u[0][y:y+h, x:x+w]
+                image_u -= np.min(image_u)
+                image_u /= np.max(image_u)
+                images_u[0][y:y+h, x:x+w] = image_u
 
 
     plt.figure()
