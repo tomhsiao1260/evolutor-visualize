@@ -231,8 +231,8 @@ def main():
     umb = np.array([4008, 2304]) # x, y
     level_start, chunk = 3, 128
     # x0, y0, w0, h0 = 3000, 3000, chunk*(2**level_start), chunk*(2**level_start)
-    x0, y0, w0, h0 = 2000, 2000, chunk*(2**level_start), chunk*(2**level_start)
-    # x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
+    # x0, y0, w0, h0 = 2000, 2000, chunk*(2**level_start), chunk*(2**level_start)
+    x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
 
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
@@ -276,11 +276,17 @@ def main():
         if (level == 0): continue
         print('Top-Down: solving level ', level)
         tasks = []
+        num = 2**(level_start-level)+1
 
-        for i in range(2**(level_start-level)-1):
-            for j in range(2**(level_start-level)):
+        for i in range(num):
+            for j in range(num):
                 w, h = chunk, chunk
-                x, y = w*i + w//2, h*j
+                x, y = w*i - w//2, h*j - h//2
+
+                if (i == 0): x = 0
+                if (j == 0): y = 0
+                if (i == 0 or i == num-1): w = chunk//2
+                if (j == 0 or j == num-1): h = chunk//2
 
                 image = images[level][y:y+h, x:x+w]
                 image_u = images_u_[level][y:y+h, x:x+w]
@@ -296,44 +302,43 @@ def main():
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
 
-    for level in reversed(range(level_start+1)):
-        if (level == level_start): continue
-        if (level == 0): continue
-        print('Top-Down: solving level ', level)
+    # for level in reversed(range(level_start+1)):
+    #     if (level == level_start): continue
+    #     if (level == 0): continue
+    #     print('Top-Down: solving level ', level)
 
-        for j in range(2**(level_start-level)):
-            for i in range(2**(level_start-level)-1):
-                w, h = chunk, chunk
-                x, y, s = w*i, h*j, w//2
+    #     for i in range(2**(level_start-level)-1):
+    #         for j in range(2**(level_start-level)-1):
+    #             w, h = chunk, chunk
+    #             s, t = w//2, h//2
+    #             x, y = w*i + s, h*j + t
 
-                image_v_l = images_v[level][y:y+h, 0:x+w]
-                image_v_m = images_v_[level][y:y+h, x+s:x+w+s]
-                image_v_r = images_v[level][y:y+h, x+2*s:x+w+2*s]
+    #             cx, cy = x + s, y + t
 
-                mean_l = np.mean(image_v_l[:, -s:]) - np.mean(image_v_m[:, :s])
-                mean_r = np.mean(image_v_r[:, :s]) - np.mean(image_v_m[:, -s:])
+    #             mean_l0 = np.mean(images_v[level][cy-t:cy, cx-s:cx]) - np.mean(images_v_[level][cy-t:cy, cx-s:cx])
+    #             mean_l1 = np.mean(images_v[level][cy-t:cy, cx:cx+s]) - np.mean(images_v_[level][cy-t:cy, cx:cx+s])
+    #             mean_l2 = np.mean(images_v[level][cy:cy+t, cx-s:cx]) - np.mean(images_v_[level][cy:cy+t, cx-s:cx])
+    #             mean_l = (mean_l0 + mean_l1 + mean_l2) / 3
+    #             mean_r = np.mean(images_v[level][cy:cy+t, cx:cx+s]) - np.mean(images_v_[level][cy:cy+t, cx:cx+s])
 
-                image_v_l -= mean_l
-                image_v_r -= mean_r
+    #             images_v[level] -= mean_l
+    #             images_v[level][cy:cy+h, cx:cx+w] -= mean_r - mean_l
 
-                result = np.zeros_like(images_v_[level][y:y+h, 0:x+w+2*s])
-                result[:, :x+w-s] = image_v_l[:, :x+w-s]
-                result[:, -s:] = image_v_r[:, -s:]
+    #             iys, ixs = np.mgrid[:h//2, :w//2]
+    #             iys = iys / (h//2 - 1)
+    #             ixs = ixs / (w//2 - 1)
+    #             images_v[level][cy-t:cy, cx-s:cx] = images_v_[level][cy-t:cy, cx-s:cx] * ixs*iys + images_v[level][cy-t:cy, cx-s:cx] * (1-ixs*iys)
+    #             images_v[level][cy-t:cy, cx:cx+s] = images_v_[level][cy-t:cy, cx:cx+s] * (1-ixs)*iys + images_v[level][cy-t:cy, cx:cx+s] * (1-(1-ixs)*iys)
+    #             images_v[level][cy:cy+t, cx-s:cx] = images_v_[level][cy:cy+t, cx-s:cx] * (1-iys)*ixs + images_v[level][cy:cy+t, cx-s:cx] * (1-(1-iys)*ixs)
+    #             images_v[level][cy:cy+t, cx:cx+s] = images_v_[level][cy:cy+t, cx:cx+s] * (1-ixs)*(1-iys) + images_v[level][cy:cy+t, cx:cx+s] * (1-(1-ixs)*(1-iys))
 
-                iys, ixs = np.mgrid[:h, :w//2]
-                iys = iys / (h - 1)
-                ixs = ixs / (w//2 - 1)
-                result[:, x+w-s:x+w] = image_v_m[:, :s] * ixs + image_v_l[:, -s:] * (1-ixs)
-                result[:, x+w:x+w+s] = image_v_m[:, -s:] * (1-ixs) + image_v_r[:, :s] * ixs
+    #     images_v[level] -= np.min(images_v[level])
+    #     images_v[level] /= np.max(images_v[level])
 
-                images_v[level][y:y+h, 0:x+w+2*s] = result
-
-            images_v[level][y:y+h, :] -= np.min(images_v[level][y:y+h, :])
-            images_v[level][y:y+h, :] /= np.max(images_v[level][y:y+h, :])
 
     plt.figure(figsize=(10, 4))
     show_image(images, images_u, images_v)
-    plt.connect('key_press_event', lambda event: on_key(event, images, images_u, images_v))
+    plt.connect('key_press_event', lambda event: on_key(event, images, images_u, images_v_))
     plt.show()
 
 if __name__ == '__main__':
