@@ -211,6 +211,14 @@ def show_image(images, images_u, images_v):
 
     plt.draw()
 
+# x-axis: 0, y-axis: 1, 45 degree: 0.5
+def create_angle_array(n):
+    x, y = np.meshgrid(np.linspace(0, 1, n), np.linspace(0, 1, n))
+    angles = np.arctan2(y,x)
+    values = np.zeros_like(angles)
+    values = (angles / (np.pi / 2))
+    return values
+
 def main():
     parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -249,6 +257,7 @@ def main():
     for level in reversed(range(level_start+1)):
         # if (level == level_start): continue
         if (level == 0): continue
+        if (level == 1): continue
         print('Top-Down: solving level ', level)
         tasks = []
 
@@ -274,6 +283,7 @@ def main():
     for level in reversed(range(level_start+1)):
         if (level == level_start): continue
         if (level == 0): continue
+        if (level == 1): continue
         print('Top-Down: solving level ', level)
         tasks = []
         num = 2**(level_start-level)+1
@@ -302,43 +312,142 @@ def main():
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
 
-    # for level in reversed(range(level_start+1)):
-    #     if (level == level_start): continue
-    #     if (level == 0): continue
-    #     print('Top-Down: solving level ', level)
+    for level in reversed(range(level_start+1)):
+        if (level == level_start): continue
+        if (level == 0): continue
+        if (level == 1): continue
 
-    #     for i in range(2**(level_start-level)-1):
-    #         for j in range(2**(level_start-level)-1):
-    #             w, h = chunk, chunk
-    #             s, t = w//2, h//2
-    #             x, y = w*i + s, h*j + t
+        x, y, w, h = chunk//2, 0, chunk, chunk//2
+        image_a = images_v_[level][y:y+h, x:x+w].copy()
 
-    #             cx, cy = x + s, y + t
+        x, y, w, h = chunk, 0, chunk//2, chunk
+        image_b = images_v[level][y:y+h, x:x+w].copy()
 
-    #             mean_l0 = np.mean(images_v[level][cy-t:cy, cx-s:cx]) - np.mean(images_v_[level][cy-t:cy, cx-s:cx])
-    #             mean_l1 = np.mean(images_v[level][cy-t:cy, cx:cx+s]) - np.mean(images_v_[level][cy-t:cy, cx:cx+s])
-    #             mean_l2 = np.mean(images_v[level][cy:cy+t, cx-s:cx]) - np.mean(images_v_[level][cy:cy+t, cx-s:cx])
-    #             mean_l = (mean_l0 + mean_l1 + mean_l2) / 3
-    #             mean_r = np.mean(images_v[level][cy:cy+t, cx:cx+s]) - np.mean(images_v_[level][cy:cy+t, cx:cx+s])
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        image_a_i = image_a[y:y+h, x:x+w].copy()
 
-    #             images_v[level] -= mean_l
-    #             images_v[level][cy:cy+h, cx:cx+w] -= mean_r - mean_l
+        x, y, w, h = 0, 0, chunk//2, chunk//2
+        image_b_i = image_b[y:y+h, x:x+w].copy()
 
-    #             iys, ixs = np.mgrid[:h//2, :w//2]
-    #             iys = iys / (h//2 - 1)
-    #             ixs = ixs / (w//2 - 1)
-    #             images_v[level][cy-t:cy, cx-s:cx] = images_v_[level][cy-t:cy, cx-s:cx] * ixs*iys + images_v[level][cy-t:cy, cx-s:cx] * (1-ixs*iys)
-    #             images_v[level][cy-t:cy, cx:cx+s] = images_v_[level][cy-t:cy, cx:cx+s] * (1-ixs)*iys + images_v[level][cy-t:cy, cx:cx+s] * (1-(1-ixs)*iys)
-    #             images_v[level][cy:cy+t, cx-s:cx] = images_v_[level][cy:cy+t, cx-s:cx] * (1-iys)*ixs + images_v[level][cy:cy+t, cx-s:cx] * (1-(1-iys)*ixs)
-    #             images_v[level][cy:cy+t, cx:cx+s] = images_v_[level][cy:cy+t, cx:cx+s] * (1-ixs)*(1-iys) + images_v[level][cy:cy+t, cx:cx+s] * (1-(1-ixs)*(1-iys))
+        f = chunk//2
+        image_c = (image_a_i + image_b_i) / 2
+        image_b -= image_b[f-1:f,:] - image_c[f-1:f,:]
+        image_a -= image_a[:,f-1:f] - image_c[:,0:1]
 
-    #     images_v[level] -= np.min(images_v[level])
-    #     images_v[level] /= np.max(images_v[level])
+        mask_p = images_v[level].copy()
 
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        mask_p[y:y+h, x:x+w] = image_a[:, :w]
+        amin, amax = np.min(image_a[:, :w]), np.max(image_a[:, :w])
+        x, y, w, h = chunk, 0, chunk//2, chunk//2
+        mask_p[y:y+h, x:x+w] = image_c[:, :]
+        cmin, cmax = np.min(image_c[:, :]), np.max(image_c[:, :])
+        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
+        mask_p[y:y+h, x:x+w] = image_b[h:, :]
+        bmin, bmax = np.min(image_b[h:, :]), np.max(image_b[h:, :])
+
+        mmin = min(amin, bmin, cmin)
+        mmax = max(amax, bmax, cmax)
+
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        mask_p[y:y+h, x:x+w] -= mmin
+        mask_p[y:y+h, x:x+w] /= mmax - mmin
+        x, y, w, h = chunk, 0, chunk//2, chunk//2
+        mask_p[y:y+h, x:x+w] -= mmin
+        mask_p[y:y+h, x:x+w] /= mmax - mmin
+        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
+        mask_p[y:y+h, x:x+w] -= mmin
+        mask_p[y:y+h, x:x+w] /= mmax - mmin
+
+        x, y, w, h = chunk//2, chunk//2, chunk, chunk//2
+        image_a = images_v_[level][y:y+h, x:x+w].copy()
+
+        x, y, w, h = chunk//2, 0, chunk//2, chunk
+        image_b = images_v[level][y:y+h, x:x+w].copy()
+
+        x, y, w, h = 0, 0, chunk//2, chunk//2
+        image_a_i = image_a[y:y+h, x:x+w].copy()
+
+        x, y, w, h = 0, chunk//2, chunk//2, chunk//2
+        image_b_i = image_b[y:y+h, x:x+w].copy()
+
+        f = chunk//2
+        image_c = (image_a_i + image_b_i) / 2
+        image_b -= image_b[f-1:f,:] - image_c[0:1,:]
+        image_a -= image_a[:,f-1:f] - image_c[:,f-1:f]
+
+        mask_q = images_v[level].copy()
+
+        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
+        mask_q[y:y+h, x:x+w] = image_a[:, w:]
+        amin, amax = np.min(image_a[:, w:]), np.max(image_a[:, w:])
+        x, y, w, h = chunk//2, chunk//2, chunk//2, chunk//2
+        mask_q[y:y+h, x:x+w] = image_c[:, :]
+        cmin, cmax = np.min(image_c[:, :]), np.max(image_c[:, :])
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        mask_q[y:y+h, x:x+w] = image_b[:h, :]
+        bmin, bmax = np.min(image_b[:h, :]), np.max(image_b[:h, :])
+
+        mmin = min(amin, bmin, cmin)
+        mmax = max(amax, bmax, cmax)
+
+        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
+        mask_q[y:y+h, x:x+w] -= mmin
+        mask_q[y:y+h, x:x+w] /= mmax - mmin
+        x, y, w, h = chunk//2, chunk//2, chunk//2, chunk//2
+        mask_q[y:y+h, x:x+w] -= mmin
+        mask_q[y:y+h, x:x+w] /= mmax - mmin
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        mask_q[y:y+h, x:x+w] -= mmin
+        mask_q[y:y+h, x:x+w] /= mmax - mmin
+
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        mp = np.min(mask_p[y:y+h, x:x+w])
+        mq = np.min(mask_q[y:y+h, x:x+w])
+        op = np.max(mask_p[y:y+h, x:x+w])
+        oq = np.max(mask_q[y:y+h, x:x+w])
+
+        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
+        mp = min(np.min(mask_p[y:y+h, x:x+w]), mp)
+        mq = min(np.min(mask_q[y:y+h, x:x+w]), mq)
+        op = max(np.max(mask_p[y:y+h, x:x+w]), op)
+        oq = max(np.max(mask_q[y:y+h, x:x+w]), oq)
+
+        # mask_p -= mp
+        # mask_p /= op - mp
+        # mask_p *= oq - mq
+        # mask_p += mq
+
+        cp = mask_p[chunk//2-1, chunk]
+        cq = mask_q[chunk//2, chunk-1]
+        mask_p += (cp+cq)/2 - cp
+        mask_q += (cp+cq)/2 - cq
+
+        angle_array = create_angle_array(chunk//2)
+        mix_a = angle_array.T
+        mix_b = angle_array[::-1, ::-1]
+
+        images_v[level] = mask_p
+        x, y, w, h = chunk//2, chunk//2, chunk//2, chunk//2
+        images_v[level][y:y+h, x:x+w] = mask_q[y:y+h, x:x+w]
+
+        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
+        images_v[level][y:y+h, x:x+w] = mix_a * mask_p[y:y+h, x:x+w]
+        images_v[level][y:y+h, x:x+w] += (1-mix_a) * mask_q[y:y+h, x:x+w]
+        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
+        images_v[level][y:y+h, x:x+w] = mix_b * mask_p[y:y+h, x:x+w]
+        images_v[level][y:y+h, x:x+w] += (1-mix_b) * mask_q[y:y+h, x:x+w]
+
+        x, y, w, h = chunk//2, 0, chunk, chunk
+        images_v[level][y:y+h, x:x+w] -= np.min(images_v[level][y:y+h, x:x+w])
+        images_v[level][y:y+h, x:x+w] /= np.max(images_v[level][y:y+h, x:x+w])
+
+        # images_v[level] = mask_p
+        # images_v_[level] = mask_q
 
     plt.figure(figsize=(10, 4))
     show_image(images, images_u, images_v)
-    plt.connect('key_press_event', lambda event: on_key(event, images, images_u, images_v_))
+    plt.connect('key_press_event', lambda event: on_key(event, images, images_v_, images_v))
     plt.show()
 
 if __name__ == '__main__':
