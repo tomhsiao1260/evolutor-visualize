@@ -211,6 +211,96 @@ def show_image(images, images_u, images_v):
 
     plt.draw()
 
+def merge_chunk(chunk_v, chunk_h):
+    height, width = chunk_v.shape
+
+    # vertical rectangle (left)
+    x, y, w, h = 0, 0, width//2, height
+    rect_v = chunk_v[y:y+h, x:x+w]
+    # horizontal rectangle (top)
+    x, y, w, h = 0, 0, width, height//2
+    rect_h = chunk_h[y:y+h, x:x+w]
+    # merge the cross region
+    l_left_top = merge_rectangle(rect_v, rect_h)
+
+    # vertical rectangle (right)
+    x, y, w, h = width//2, 0, width//2, height
+    rect_v = chunk_v[y:y+h, x:x+w]
+    # horizontal rectangle (bottom)
+    x, y, w, h = 0, height//2, width, height//2
+    rect_h = chunk_h[y:y+h, x:x+w]
+    # merge the cross region (reversed)
+    l_right_bottom = merge_rectangle(rect_v[::-1, ::-1], rect_h[::-1, ::-1])
+    l_right_bottom = l_right_bottom[::-1, ::-1]
+
+    chunk_m = merge_Lshape(l_left_top, l_right_bottom)
+
+    return chunk_m
+
+def merge_rectangle(rect_v, rect_h):
+    height, width = rect_v.shape[0], rect_h.shape[1]
+    rect_m = np.zeros((height, width))
+
+    # top-left
+    x, y, w, h = 0, 0, width//2, height//2
+    region0 = (rect_v[y:y+h, x:x+w] + rect_h[y:y+h, x:x+w]) / 2
+    rect_m[y:y+h, x:x+w] = region0
+    # top-right
+    x, y, w, h = width//2, 0, width//2, height//2
+    region1 = rect_h[y:y+h, x:x+w]
+    region1 += region0[:, x-1:x] - rect_h[:, x:x+1]
+    rect_m[y:y+h, x:x+w] = region1
+    # bottom-left
+    x, y, w, h = 0, height//2, width//2, height//2
+    region2 = rect_v[y:y+h, x:x+w]
+    region2 += region0[y-1:y, :] - rect_v[y:y+1, :]
+    rect_m[y:y+h, x:x+w] = region2
+
+    # normalize
+    value_min = min(np.min(region0), np.min(region1), np.min(region2))
+    value_max = max(np.max(region0), np.max(region1), np.max(region2))
+    rect_m -= value_min
+    rect_m /= value_max - value_min
+    return rect_m
+
+def merge_Lshape(l_left_top, l_right_bottom):
+    height, width = l_left_top.shape
+    chunk = np.zeros((height, width))
+
+    # center calibration
+    c_lt = l_left_top[height//2-1, width//2-1]
+    c_rb = l_right_bottom[height//2, width//2]
+    l_left_top += (c_rb - c_lt) / 2
+    l_right_bottom += (c_lt - c_rb) / 2
+
+    angle_array = create_angle_array(height//2)
+    angle_region1 = angle_array.copy()[::-1, :]
+    angle_region2 = angle_array.copy()[::-1, :].T
+
+    # region 0 (left, top)
+    x, y, w, h = 0, 0, width//2, height//2
+    region0 = l_left_top[y:y+h, x:x+w]
+    chunk[y:y+h, x:x+w] = region0
+    # region 1 mixed (right, top)
+    x, y, w, h = width//2, 0, width//2, height//2
+    region1 = l_left_top[y:y+h, x:x+w] * angle_region1
+    region1 += l_right_bottom[y:y+h, x:x+w] * (1 - angle_region1)
+    chunk[y:y+h, x:x+w] = region1
+    # region 2 mixed (left, bottom)
+    x, y, w, h = 0, height//2, width//2, height//2
+    region2 = l_left_top[y:y+h, x:x+w] * angle_region2
+    region2 += l_right_bottom[y:y+h, x:x+w] * (1 - angle_region2)
+    chunk[y:y+h, x:x+w] = region2
+    # region 3 (right, bottom)
+    x, y, w, h = width//2, height//2, width//2, height//2
+    region3 = l_right_bottom[y:y+h, x:x+w]
+    chunk[y:y+h, x:x+w] = region3
+
+    # normalize
+    chunk -= np.min(chunk)
+    chunk /= np.max(chunk)
+    return chunk
+
 # x-axis: 0, y-axis: 1, 45 degree: 0.5
 def create_angle_array(n):
     x, y = np.meshgrid(np.linspace(0, 1, n), np.linspace(0, 1, n))
@@ -317,133 +407,12 @@ def main():
         if (level == 0): continue
         if (level == 1): continue
 
-        x, y, w, h = chunk//2, 0, chunk, chunk//2
-        image_a = images_v_[level][y:y+h, x:x+w].copy()
-
-        x, y, w, h = chunk, 0, chunk//2, chunk
-        image_b = images_v[level][y:y+h, x:x+w].copy()
-
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        image_a_i = image_a[y:y+h, x:x+w].copy()
-
-        x, y, w, h = 0, 0, chunk//2, chunk//2
-        image_b_i = image_b[y:y+h, x:x+w].copy()
-
-        f = chunk//2
-        image_c = (image_a_i + image_b_i) / 2
-        image_b -= image_b[f-1:f,:] - image_c[f-1:f,:]
-        image_a -= image_a[:,f-1:f] - image_c[:,0:1]
-
-        mask_p = images_v[level].copy()
-
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        mask_p[y:y+h, x:x+w] = image_a[:, :w]
-        amin, amax = np.min(image_a[:, :w]), np.max(image_a[:, :w])
-        x, y, w, h = chunk, 0, chunk//2, chunk//2
-        mask_p[y:y+h, x:x+w] = image_c[:, :]
-        cmin, cmax = np.min(image_c[:, :]), np.max(image_c[:, :])
-        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
-        mask_p[y:y+h, x:x+w] = image_b[h:, :]
-        bmin, bmax = np.min(image_b[h:, :]), np.max(image_b[h:, :])
-
-        mmin = min(amin, bmin, cmin)
-        mmax = max(amax, bmax, cmax)
-
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        mask_p[y:y+h, x:x+w] -= mmin
-        mask_p[y:y+h, x:x+w] /= mmax - mmin
-        x, y, w, h = chunk, 0, chunk//2, chunk//2
-        mask_p[y:y+h, x:x+w] -= mmin
-        mask_p[y:y+h, x:x+w] /= mmax - mmin
-        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
-        mask_p[y:y+h, x:x+w] -= mmin
-        mask_p[y:y+h, x:x+w] /= mmax - mmin
-
-        x, y, w, h = chunk//2, chunk//2, chunk, chunk//2
-        image_a = images_v_[level][y:y+h, x:x+w].copy()
-
-        x, y, w, h = chunk//2, 0, chunk//2, chunk
-        image_b = images_v[level][y:y+h, x:x+w].copy()
-
-        x, y, w, h = 0, 0, chunk//2, chunk//2
-        image_a_i = image_a[y:y+h, x:x+w].copy()
-
-        x, y, w, h = 0, chunk//2, chunk//2, chunk//2
-        image_b_i = image_b[y:y+h, x:x+w].copy()
-
-        f = chunk//2
-        image_c = (image_a_i + image_b_i) / 2
-        image_b -= image_b[f-1:f,:] - image_c[0:1,:]
-        image_a -= image_a[:,f-1:f] - image_c[:,f-1:f]
-
-        mask_q = images_v[level].copy()
-
-        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
-        mask_q[y:y+h, x:x+w] = image_a[:, w:]
-        amin, amax = np.min(image_a[:, w:]), np.max(image_a[:, w:])
-        x, y, w, h = chunk//2, chunk//2, chunk//2, chunk//2
-        mask_q[y:y+h, x:x+w] = image_c[:, :]
-        cmin, cmax = np.min(image_c[:, :]), np.max(image_c[:, :])
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        mask_q[y:y+h, x:x+w] = image_b[:h, :]
-        bmin, bmax = np.min(image_b[:h, :]), np.max(image_b[:h, :])
-
-        mmin = min(amin, bmin, cmin)
-        mmax = max(amax, bmax, cmax)
-
-        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
-        mask_q[y:y+h, x:x+w] -= mmin
-        mask_q[y:y+h, x:x+w] /= mmax - mmin
-        x, y, w, h = chunk//2, chunk//2, chunk//2, chunk//2
-        mask_q[y:y+h, x:x+w] -= mmin
-        mask_q[y:y+h, x:x+w] /= mmax - mmin
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        mask_q[y:y+h, x:x+w] -= mmin
-        mask_q[y:y+h, x:x+w] /= mmax - mmin
-
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        mp = np.min(mask_p[y:y+h, x:x+w])
-        mq = np.min(mask_q[y:y+h, x:x+w])
-        op = np.max(mask_p[y:y+h, x:x+w])
-        oq = np.max(mask_q[y:y+h, x:x+w])
-
-        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
-        mp = min(np.min(mask_p[y:y+h, x:x+w]), mp)
-        mq = min(np.min(mask_q[y:y+h, x:x+w]), mq)
-        op = max(np.max(mask_p[y:y+h, x:x+w]), op)
-        oq = max(np.max(mask_q[y:y+h, x:x+w]), oq)
-
-        # mask_p -= mp
-        # mask_p /= op - mp
-        # mask_p *= oq - mq
-        # mask_p += mq
-
-        cp = mask_p[chunk//2-1, chunk]
-        cq = mask_q[chunk//2, chunk-1]
-        mask_p += (cp+cq)/2 - cp
-        mask_q += (cp+cq)/2 - cq
-
-        angle_array = create_angle_array(chunk//2)
-        mix_a = angle_array.T
-        mix_b = angle_array[::-1, ::-1]
-
-        images_v[level] = mask_p
-        x, y, w, h = chunk//2, chunk//2, chunk//2, chunk//2
-        images_v[level][y:y+h, x:x+w] = mask_q[y:y+h, x:x+w]
-
-        x, y, w, h = chunk, chunk//2, chunk//2, chunk//2
-        images_v[level][y:y+h, x:x+w] = mix_a * mask_p[y:y+h, x:x+w]
-        images_v[level][y:y+h, x:x+w] += (1-mix_a) * mask_q[y:y+h, x:x+w]
-        x, y, w, h = chunk//2, 0, chunk//2, chunk//2
-        images_v[level][y:y+h, x:x+w] = mix_b * mask_p[y:y+h, x:x+w]
-        images_v[level][y:y+h, x:x+w] += (1-mix_b) * mask_q[y:y+h, x:x+w]
-
         x, y, w, h = chunk//2, 0, chunk, chunk
-        images_v[level][y:y+h, x:x+w] -= np.min(images_v[level][y:y+h, x:x+w])
-        images_v[level][y:y+h, x:x+w] /= np.max(images_v[level][y:y+h, x:x+w])
+        chunk_v = images_v[level][y:y+h, x:x+w].copy()
+        chunk_h = images_v_[level][y:y+h, x:x+w].copy()
 
-        # images_v[level] = mask_p
-        # images_v_[level] = mask_q
+        chunk_m = merge_chunk(chunk_v, chunk_h)
+        images_v[level][y:y+h, x:x+w] = chunk_m
 
     plt.figure(figsize=(10, 4))
     show_image(images, images_u, images_v)
