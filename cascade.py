@@ -309,6 +309,27 @@ def create_angle_array(n):
     values = (angles / (np.pi / 2))
     return values
 
+def merge_bridge(b_left, b_middle, b_right):
+    height, width = b_left.shape
+    chunk = np.zeros((height, 2*width))
+
+    # left
+    x, y, w, h = 0, 0, width, height
+    b_left += b_middle[:, 0:1] - b_left[:, width//2-1:width//2]
+    chunk[y:y+h, x:x+w] = b_left
+    # right
+    x, y, w, h = width, 0, width, height
+    b_right += b_middle[:, -2:-1] - b_right[:, width//2-1:width//2]
+    chunk[y:y+h, x:x+w] = b_right
+    # middle
+    x, y, w, h = width//2, 0, width, height
+    chunk[y:y+h, x:x+w] = b_middle
+
+    # normalize
+    chunk -= np.min(chunk)
+    chunk /= np.max(chunk)
+    return chunk
+
 def main():
     parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -407,12 +428,62 @@ def main():
         if (level == 0): continue
         if (level == 1): continue
 
+        chunk_vv = np.zeros_like(images_v[level])
+        chunk_hh = np.zeros_like(images_v[level])
+
         x, y, w, h = chunk//2, 0, chunk, chunk
         chunk_v = images_v[level][y:y+h, x:x+w].copy()
         chunk_h = images_v_[level][y:y+h, x:x+w].copy()
+        b_middle = merge_chunk(chunk_v, chunk_h)
 
-        chunk_m = merge_chunk(chunk_v, chunk_h)
-        images_v[level][y:y+h, x:x+w] = chunk_m
+        x, y, w, h = 0, 0, chunk, chunk
+        b_left = images_v[level][y:y+h, x:x+w].copy()
+        x, y, w, h = chunk, 0, chunk, chunk
+        b_right = images_v[level][y:y+h, x:x+w].copy()
+
+        x, y, w, h = 0, 0, chunk*2, chunk
+        chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
+
+        x, y, w, h = chunk//2, chunk, chunk, chunk
+        chunk_v = images_v[level][y:y+h, x:x+w].copy()
+        chunk_h = images_v_[level][y:y+h, x:x+w].copy()
+        b_middle = merge_chunk(chunk_v, chunk_h)
+
+        x, y, w, h = 0, chunk, chunk, chunk
+        b_left = images_v[level][y:y+h, x:x+w].copy()
+        x, y, w, h = chunk, chunk, chunk, chunk
+        b_right = images_v[level][y:y+h, x:x+w].copy()
+
+        x, y, w, h = 0, chunk, chunk*2, chunk
+        chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
+
+        x, y, w, h = 0, chunk//2, chunk, chunk
+        chunk_v = images_v_[level][y:y+h, x:x+w].copy()
+        chunk_h = images_v[level][y:y+h, x:x+w].copy()
+        b_middle = merge_chunk(chunk_v, chunk_h)
+
+        x, y, w, h = 0, 0, chunk, chunk
+        b_left = images_v[level][y:y+h, x:x+w].copy()
+        x, y, w, h = 0, chunk, chunk, chunk
+        b_right = images_v[level][y:y+h, x:x+w].copy()
+
+        x, y, w, h = 0, 0, chunk, chunk*2
+        chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
+
+        x, y, w, h = chunk, chunk//2, chunk, chunk
+        chunk_v = images_v_[level][y:y+h, x:x+w].copy()
+        chunk_h = images_v[level][y:y+h, x:x+w].copy()
+        b_middle = merge_chunk(chunk_v, chunk_h)
+
+        x, y, w, h = chunk, 0, chunk, chunk
+        b_left = images_v[level][y:y+h, x:x+w].copy()
+        x, y, w, h = chunk, chunk, chunk, chunk
+        b_right = images_v[level][y:y+h, x:x+w].copy()
+
+        x, y, w, h = chunk, 0, chunk, chunk*2
+        chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
+
+        images_v[level] = merge_chunk(chunk_vv, chunk_hh)
 
     plt.figure(figsize=(10, 4))
     show_image(images, images_u, images_v)
