@@ -328,6 +328,93 @@ def merge_bridge(b_left, b_middle, b_right):
     chunk[y:y+h, x:x+w] = b_middle
     return chunk
 
+def merge_window(window_a, window_b):
+    chunk = window_a.shape[0] // 2
+    chunk_hh = np.zeros((chunk*2, chunk*2))
+    chunk_vv = np.zeros((chunk*2, chunk*2))
+
+    x, y, w, h = chunk//2, 0, chunk, chunk
+    chunk_v = window_a[y:y+h, x:x+w].copy()
+    chunk_h = window_b[y:y+h, x:x+w].copy()
+    b_middle = merge_chunk(chunk_v, chunk_h)
+
+    x, y, w, h = 0, 0, chunk, chunk
+    b_left = window_a[y:y+h, x:x+w].copy()
+    x, y, w, h = chunk, 0, chunk, chunk
+    b_right = window_a[y:y+h, x:x+w].copy()
+
+    x, y, w, h = 0, 0, chunk*2, chunk
+    chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
+
+    x, y, w, h = chunk//2, chunk, chunk, chunk
+    chunk_v = window_a[y:y+h, x:x+w].copy()
+    chunk_h = window_b[y:y+h, x:x+w].copy()
+    b_middle = merge_chunk(chunk_v, chunk_h)
+
+    x, y, w, h = 0, chunk, chunk, chunk
+    b_left = window_a[y:y+h, x:x+w].copy()
+    x, y, w, h = chunk, chunk, chunk, chunk
+    b_right = window_a[y:y+h, x:x+w].copy()
+
+    x, y, w, h = 0, chunk, chunk*2, chunk
+    chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
+
+    x, y, w, h = 0, chunk//2, chunk, chunk
+    chunk_v = window_b[y:y+h, x:x+w].copy()
+    chunk_h = window_a[y:y+h, x:x+w].copy()
+    b_middle = merge_chunk(chunk_v, chunk_h)
+
+    x, y, w, h = 0, 0, chunk, chunk
+    b_left = window_a[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, chunk, chunk, chunk
+    b_right = window_a[y:y+h, x:x+w].copy()
+
+    x, y, w, h = 0, 0, chunk, chunk*2
+    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
+
+    x, y, w, h = chunk, chunk//2, chunk, chunk
+    chunk_v = window_b[y:y+h, x:x+w].copy()
+    chunk_h = window_a[y:y+h, x:x+w].copy()
+    b_middle = merge_chunk(chunk_v, chunk_h)
+
+    x, y, w, h = chunk, 0, chunk, chunk
+    b_left = window_a[y:y+h, x:x+w].copy()
+    x, y, w, h = chunk, chunk, chunk, chunk
+    b_right = window_a[y:y+h, x:x+w].copy()
+
+    x, y, w, h = chunk, 0, chunk, chunk*2
+    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
+
+    return merge_chunk(chunk_vv, chunk_hh)
+
+def merge_level(image_o, image_p, n):
+    image_oo = image_o.copy()
+    image_pp = image_o.copy()
+    size = image_o.shape[0]
+    chunk = size//n
+
+    for i in range(n):
+        for j in range(n):
+            x, y, w, h = i*chunk, j*chunk, chunk, chunk
+            image_oo[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+
+    for i in range(n-1):
+        x, y, w, h = (i+1)*chunk//2, 0, chunk, chunk
+        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = (i+1)*chunk//2, size-chunk, chunk, chunk
+        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = 0, (i+1)*chunk//2, chunk, chunk
+        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = size-chunk, (i+1)*chunk//2, chunk, chunk
+        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+
+    for i in range(n-1):
+        for j in range(n-1):
+            x, y, w, h = (i+1)*chunk//2, (j+1)*chunk//2, chunk, chunk
+            image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+
+    return image_oo, image_pp
+
 def main():
     parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -347,13 +434,13 @@ def main():
 
     umb = np.array([4008, 2304]) # x, y
     level_start, chunk = 3, 128
-    # x0, y0, w0, h0 = 3000, 3000, chunk*(2**level_start), chunk*(2**level_start)
+    x0, y0, w0, h0 = 3000, 3000, chunk*(2**level_start), chunk*(2**level_start)
     # x0, y0, w0, h0 = 2000, 2000, chunk*(2**level_start), chunk*(2**level_start)
-    x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
+    # x0, y0, w0, h0 = 1000, 1000, chunk*(2**level_start), chunk*(2**level_start)
 
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
-    images, images_u, images_v = createInitUV(z_scroll, umb, x0, y0, w0, h0)
-    _, images_u_, images_v_ = createInitUV(z_scroll, umb, x0, y0, w0, h0)
+    images, images_uo, images_vo = createInitUV(z_scroll, umb, x0, y0, w0, h0)
+    _, images_up, images_vp = createInitUV(z_scroll, umb, x0, y0, w0, h0)
     images_st = []
 
     print('Compute Eigens ...')
@@ -378,8 +465,8 @@ def main():
                 x, y = w*i, h*j
 
                 image = images[level][y:y+h, x:x+w]
-                image_u = images_u[level][y:y+h, x:x+w]
-                image_v = images_v[level][y:y+h, x:x+w]
+                image_u = images_uo[level][y:y+h, x:x+w]
+                image_v = images_vo[level][y:y+h, x:x+w]
 
                 st = Struct()
                 st.vector_u = images_st[level].vector_u[y:y+h, x:x+w]
@@ -412,8 +499,8 @@ def main():
                 if (j == 0 or j == num-1): h = chunk//2
 
                 image = images[level][y:y+h, x:x+w]
-                image_u = images_u_[level][y:y+h, x:x+w]
-                image_v = images_v_[level][y:y+h, x:x+w]
+                image_u = images_up[level][y:y+h, x:x+w]
+                image_v = images_vp[level][y:y+h, x:x+w]
 
                 st = Struct()
                 st.vector_u = images_st[level].vector_u[y:y+h, x:x+w]
@@ -425,144 +512,18 @@ def main():
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             list(tqdm(executor.map(updateUV, tasks), total=len(tasks)))
 
-    for level in reversed(range(level_start+1)):
-        if (level == level_start): continue
-        if (level == 0): continue
-        # if (level == 1): continue
-        if (level == 2): continue
-        if (level == 3): continue
-        print('Merging ...')
-        num = 2**(level_start-level)
+        level = 1
+        # images_vo[level], images_vp[level] = merge_level(images_vo[level], images_vp[level], 4)
+        images_vo[level], images_vp[level] = merge_level(images_vo[level], images_vp[level], 2)
+        images_vo[level], images_vp[level] = merge_level(images_vo[level], images_vp[level], 1)
 
-        for j in range(num):
-            chunk_hh = np.zeros((chunk, chunk*num))
-
-            x, y, h, w = 0, j*chunk, chunk, chunk
-            b_left = images_v[level][y:y+h, x:x+w].copy()
-
-            for i in range(num-1):
-                x, y, w, h = chunk//2 + i*chunk, j*chunk, chunk, chunk
-                chunk_v = images_v[level][y:y+h, x:x+w].copy()
-                chunk_h = images_v_[level][y:y+h, x:x+w].copy()
-                b_middle = merge_chunk(chunk_v, chunk_h)
-
-                x, y, w, h = (i+1)*chunk, j*chunk, chunk, chunk
-                b_right = images_v[level][y:y+h, x:x+w]
-
-                x, y, w, h = 0, 0, (i+2)*chunk, chunk
-                b_left = merge_bridge(b_left, b_middle, b_right)
-                chunk_hh[y:y+h, x:x+w] = b_left
-
-            # normalize
-            chunk_hh -= np.min(chunk_hh)
-            chunk_hh /= np.max(chunk_hh)
-            x, y, w, h = 0, j*chunk, num*chunk, chunk
-            images_v[level][y:y+h, x:x+w] = chunk_hh
-
-        for j in range(num-1):
-            chunk_hh = np.zeros((chunk, chunk*num))
-
-            x, y, h, w = 0, chunk//2 + j*chunk, chunk, chunk
-            chunk_v = images_v_[level][y:y+h, x:x+w].copy()
-            chunk_h = images_v[level][y:y+h, x:x+w].copy()
-            b_left = merge_chunk(chunk_v, chunk_h)
-
-            for i in range(num-1):
-                x, y, w, h = chunk//2 + i*chunk, chunk//2 + j*chunk, chunk, chunk
-                b_middle = images_v_[level][y:y+h, x:x+w].copy()
-
-                x, y, w, h = (i+1)*chunk, chunk//2 + j*chunk, chunk, chunk
-                chunk_v = images_v_[level][y:y+h, x:x+w].copy()
-                chunk_h = images_v[level][y:y+h, x:x+w].copy()
-                b_right = merge_chunk(chunk_v, chunk_h)
-
-                x, y, w, h = 0, 0, (i+2)*chunk, chunk
-                b_left = merge_bridge(b_left, b_middle, b_right)
-                chunk_hh[y:y+h, x:x+w] = b_left
-
-            # normalize
-            chunk_hh -= np.min(chunk_hh)
-            chunk_hh /= np.max(chunk_hh)
-            x, y, w, h = 0, chunk//2 + j*chunk, num*chunk, chunk
-            images_v_[level][y:y+h, x:x+w] = chunk_hh
-
-        images_v[level] = images_v[level].T
-        images_v_[level] = images_v_[level].T
-        img_h, img_w = images_v[level].shape
-
-        x, y, h, w = 0, 0, img_h, chunk
-        b_left = images_v[level][y:y+h, x:x+w]
-
-        for i in range(num-1):
-            x, y, h, w = chunk//2 + i*chunk, 0, img_h, chunk
-            b_middle = images_v_[level][y:y+h, x:x+w]
-
-            x, y, h, w = (i+1)*chunk, 0, img_h, chunk
-            b_right = images_v[level][y:y+h, x:x+w]
-
-            x, y, h, w = 0, 0, img_h, (i+2)*chunk
-            b_left = merge_bridge(b_left, b_middle, b_right)
-
-        images_v[level] = b_left.T
-
-
-        # x, y, w, h = chunk//2, 0, chunk, chunk
-        # chunk_v = images_v[level][y:y+h, x:x+w].copy()
-        # chunk_h = images_v_[level][y:y+h, x:x+w].copy()
-        # b_middle = merge_chunk(chunk_v, chunk_h)
-
-        # x, y, w, h = 0, 0, chunk, chunk
-        # b_left = images_v[level][y:y+h, x:x+w].copy()
-        # x, y, w, h = chunk, 0, chunk, chunk
-        # b_right = images_v[level][y:y+h, x:x+w].copy()
-
-        # x, y, w, h = 0, 0, chunk*2, chunk
-        # chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
-
-        # x, y, w, h = chunk//2, chunk, chunk, chunk
-        # chunk_v = images_v[level][y:y+h, x:x+w].copy()
-        # chunk_h = images_v_[level][y:y+h, x:x+w].copy()
-        # b_middle = merge_chunk(chunk_v, chunk_h)
-
-        # x, y, w, h = 0, chunk, chunk, chunk
-        # b_left = images_v[level][y:y+h, x:x+w].copy()
-        # x, y, w, h = chunk, chunk, chunk, chunk
-        # b_right = images_v[level][y:y+h, x:x+w].copy()
-
-        # x, y, w, h = 0, chunk, chunk*2, chunk
-        # chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
-
-        # x, y, w, h = 0, chunk//2, chunk, chunk
-        # chunk_v = images_v_[level][y:y+h, x:x+w].copy()
-        # chunk_h = images_v[level][y:y+h, x:x+w].copy()
-        # b_middle = merge_chunk(chunk_v, chunk_h)
-
-        # x, y, w, h = 0, 0, chunk, chunk
-        # b_left = images_v[level][y:y+h, x:x+w].copy()
-        # x, y, w, h = 0, chunk, chunk, chunk
-        # b_right = images_v[level][y:y+h, x:x+w].copy()
-
-        # x, y, w, h = 0, 0, chunk, chunk*2
-        # chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
-
-        # x, y, w, h = chunk, chunk//2, chunk, chunk
-        # chunk_v = images_v_[level][y:y+h, x:x+w].copy()
-        # chunk_h = images_v[level][y:y+h, x:x+w].copy()
-        # b_middle = merge_chunk(chunk_v, chunk_h)
-
-        # x, y, w, h = chunk, 0, chunk, chunk
-        # b_left = images_v[level][y:y+h, x:x+w].copy()
-        # x, y, w, h = chunk, chunk, chunk, chunk
-        # b_right = images_v[level][y:y+h, x:x+w].copy()
-
-        # x, y, w, h = chunk, 0, chunk, chunk*2
-        # chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
-
-        # images_v[level] = merge_chunk(chunk_vv, chunk_hh)
+        # images_uo[level], images_up[level] = merge_level(images_uo[level], images_up[level], 4)
+        images_uo[level], images_up[level] = merge_level(images_uo[level], images_up[level], 2)
+        images_uo[level], images_up[level] = merge_level(images_uo[level], images_up[level], 1)
 
     plt.figure(figsize=(10, 4))
-    show_image(images, images_u, images_v)
-    plt.connect('key_press_event', lambda event: on_key(event, images, images_v_, images_v))
+    show_image(images, images_uo, images_vo)
+    plt.connect('key_press_event', lambda event: on_key(event, images, images_uo, images_vo))
     plt.show()
 
 if __name__ == '__main__':
