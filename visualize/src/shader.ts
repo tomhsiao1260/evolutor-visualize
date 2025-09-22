@@ -16,6 +16,8 @@ export class Shader extends ShaderMaterial {
             flatten : { value: 0 },
             opacity : { value: 0.5 },
             axis : { value: 0 },
+            cx : { value: 0 },
+            cy : { value: 0 },
         },
 
         vertexShader: /* glsl */ `
@@ -23,6 +25,8 @@ export class Shader extends ShaderMaterial {
             uniform sampler2D udata;
             uniform sampler2D vdata;
             uniform float flatten;
+            uniform float cx;
+            uniform float cy;
 
             void main() {
                 vUv = vec2(uv.x, 1.0 - uv.y);
@@ -30,9 +34,17 @@ export class Shader extends ShaderMaterial {
                 float uValue = texture2D(udata, uv).r;
                 float vValue = texture2D(vdata, uv).r;
 
-                vec3 pos = position;
-                pos.x = (1.0 - flatten) * position.x - flatten * 2.0 * (uValue - 0.5);
-                pos.y = (1.0 - flatten) * position.y + flatten * 2.0 * (vValue - 0.5);
+                // vec3 pos = position;
+                // pos.x = (1.0 - flatten) * position.x - flatten * 2.0 * (uValue - 0.5);
+                // pos.y = (1.0 - flatten) * position.y + flatten * 2.0 * (vValue - 0.5);
+
+                vec3 pos = (position + 1.0) / 2.0;
+                vec2 delta = pos.xy - vec2(cx, cy);
+                float r = length(delta);
+                float ro = length(1.0 - vec2(cx, cy));
+                float s = ro / r * vValue;
+                pos.x = (1.0 - flatten) * position.x + flatten * ((s * (pos.x - cx) + cx) * 2.0 - 1.0);
+                pos.y = (1.0 - flatten) * position.y + flatten * ((s * (pos.y - cy) + cy) * 2.0 - 1.0);
 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4( pos, 1.0 );
             }`,

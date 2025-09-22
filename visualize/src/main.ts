@@ -85,9 +85,9 @@ loadData()
 
 async function loadData() {
   const level = 3
-  const chunk = 128 * 1
-  const x0 = 448 + 0
-  const y0 = 448 + 0
+  const chunk = 50 * 8
+  const x0 = 250 + 0
+  const y0 = 125 + 0
 
   const volZarr = await openArray({
     store: "http://localhost:5173/",
@@ -157,6 +157,8 @@ async function loadData() {
 
   material.uniforms.udata.value = uTex
   material.uniforms.vdata.value = vTex
+  material.uniforms.cx.value = (4008-2000) / 3200
+  material.uniforms.cy.value = (2304-1000) / 3200
 
   const tab20 = new THREE.TextureLoader().load(textureTab20)
   tab20.minFilter = THREE.NearestFilter
