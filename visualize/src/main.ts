@@ -157,7 +157,7 @@ async function loadData() {
 
   material.uniforms.udata.value = uTex
   material.uniforms.vdata.value = vTex
-  material.uniforms.cx.value = (4008-2000) / 3200
+  material.uniforms.cx.value = (3900-2000) / 3200
   material.uniforms.cy.value = (2304-1000) / 3200
 
   const tab20 = new THREE.TextureLoader().load(textureTab20)

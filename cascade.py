@@ -9,9 +9,11 @@ from tqdm import tqdm
 from scipy import sparse
 from wind2d import ImageViewer
 import matplotlib.pyplot as plt
+from scipy.spatial import cKDTree
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import cpu_count
 from scipy.interpolate import interp1d
+from scipy.interpolate import griddata
 
 def solveAxEqb(A, b):
     # print("solving Ax = b", A.shape, b.shape)
@@ -116,14 +118,16 @@ def updateST(args):
     image_v, st = args
 
     v0 = solveUV0(image_v, st, smoothing_weight=.5, axis='v')
-    v0 -= np.min(v0)
-    v0 /= np.max(v0)
+    if (np.min(v0) != np.max(v0)):
+        v0 -= np.min(v0)
+        v0 /= np.max(v0)
 
     ImageViewer.alignUVVec(v0, st)
 
     v1 = solveUV1(image_v, st, smoothing_weight=.2, cross_weight=.7, axis='v')
-    v1 -= np.min(v1)
-    v1 /= np.max(v1)
+    if (np.min(v1) != np.max(v1)):
+        v1 -= np.min(v1)
+        v1 /= np.max(v1)
 
     uvec, ucoh = ImageViewer.synthesizeUVecArray(v1)
     np.copyto(st.vector_u, uvec)
@@ -133,18 +137,20 @@ def updateST(args):
 def updateU(args):
     image_u, st = args
 
-    u1 = solveUV0(image_u, st, smoothing_weight=.5, axis='u')
-    # u1 = solveUV1(image_u, st, smoothing_weight=.1, cross_weight=.5, axis='u')
-    u1 -= np.min(u1)
-    u1 /= np.max(u1)
+    # u1 = solveUV0(image_u, st, smoothing_weight=.5, axis='u')
+    u1 = solveUV1(image_u, st, smoothing_weight=.1, cross_weight=.5, axis='u')
+    if (np.min(u1) != np.max(u1)):
+        u1 -= np.min(u1)
+        u1 /= np.max(u1)
     np.copyto(image_u, u1)
 
 def updateV(args):
     image_v, st = args
 
     v1 = solveUV1(image_v, st, smoothing_weight=.2, cross_weight=.7, axis='v')
-    v1 -= np.min(v1)
-    v1 /= np.max(v1)
+    if (np.min(v1) != np.max(v1)):
+        v1 -= np.min(v1)
+        v1 /= np.max(v1)
     np.copyto(image_v, v1)
 
 def on_key(event, images, images_u, images_v):
@@ -226,8 +232,9 @@ def merge_rectangle(rect_v, rect_h):
     # normalize
     value_min = min(np.min(region0), np.min(region1), np.min(region2))
     value_max = max(np.max(region0), np.max(region1), np.max(region2))
-    rect_m -= value_min
-    rect_m /= value_max - value_min
+    if (value_max != value_min):
+        rect_m -= value_min
+        rect_m /= value_max - value_min
     return rect_m
 
 def merge_Lshape(l_left_top, l_right_bottom):
@@ -264,8 +271,9 @@ def merge_Lshape(l_left_top, l_right_bottom):
     chunk[y:y+h, x:x+w] = region3
 
     # normalize
-    chunk -= np.min(chunk)
-    chunk /= np.max(chunk)
+    if (np.min(chunk) != np.max(chunk)):
+        chunk -= np.min(chunk)
+        chunk /= np.max(chunk)
     return chunk
 
 # x-axis: 0, y-axis: 1, 45 degree: 0.5
@@ -399,7 +407,6 @@ def main():
     # input_ome_zarr = args.input_ome_zarr
     num_threads = args.num_threads
 
-    umb = np.array([4008, 2304]) # x, y
     # level_start, chunk = 3, 128
     # x0, y0, w0, h0 = 3000, 3000, chunk*(2**level_start), chunk*(2**level_start)
     # x0, y0, w0, h0 = 2000, 2000, chunk*(2**level_start), chunk*(2**level_start)
@@ -409,10 +416,10 @@ def main():
     # level, n, chunk = 2, 16, 100
     # x0, y0, w0, h0 = 0, 0, chunk*n, chunk*n
     # level, n, chunk = 3, 2, 200
-    level, n, chunk = 3, 8, 50
-    x0, y0, w0, h0 = 2000//(2**level), 1000//(2**level), chunk*n, chunk*n
+    level, n, chunk = 3, 8, 52
+    x0, y0, w0, h0 = 1820//(2**level), 1056//(2**level), chunk*n, chunk*n
     # x0, y0, w0, h0 = 2000//(2**level), 2350//(2**level), chunk*n, chunk*n
-    umb = np.array([4008//(2**level), 2304//(2**level)])
+    umb = np.array([3900//(2**level), 2304//(2**level)])
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
     z_scroll_v = zarr.open('./evol1/scroll_v.zarr/', mode='a')
@@ -422,6 +429,7 @@ def main():
     image_vo = createRadiusArray(umb, x0, y0, w0, h0)
     image_up = image_uo.copy()
     image_vp = image_vo.copy()
+    theta = image_uo.copy()
 
     print('Compute Eigens ...')
     image = image.astype(np.float32) / 65535.
@@ -479,10 +487,13 @@ def main():
     image_vo, image_vp = merge_level(image_vo, image_vp, 1)
 
     # print('Compute Eigens ...')
-    # st = ST(image_vo * 255)
+    # st = ST(image_vo * 25500)
     # st.computeEigens()
 
-    # print('Top-Down: solving level ', level)
+    # ImageViewer.alignUVVec(image_vo, st)
+    # uvec, ucoh = ImageViewer.synthesizeUVecArray(image_vo)
+    # np.copyto(st.vector_u, uvec)
+
     # tasks = []
 
     # for i in range(n):
@@ -502,19 +513,168 @@ def main():
     # with ThreadPoolExecutor(max_workers=num_threads) as executor:
     #     list(tqdm(executor.map(updateU, tasks), total=len(tasks)))
 
-    # # image_uo, image_up = merge_level(image_uo, image_up, 8)
-    # image_uo, image_up = merge_level(image_uo, image_up, 4)
-    # image_uo, image_up = merge_level(image_uo, image_up, 2)
-    # image_uo, image_up = merge_level(image_uo, image_up, 1)
+    # tasks = []
+
+    # for i in range(n+1):
+    #     for j in range(n+1):
+    #         w, h = chunk, chunk
+    #         x, y = w*i - w//2, h*j - h//2
+
+    #         if (i == 0): x = 0
+    #         if (j == 0): y = 0
+    #         if (i == 0 or i == n): w = chunk//2
+    #         if (j == 0 or j == n): h = chunk//2
+
+    #         image_u = image_up[y:y+h, x:x+w]
+
+    #         image_st = Struct()
+    #         image_st.vector_u = st.vector_u[y:y+h, x:x+w]
+    #         image_st.vector_v = st.vector_v[y:y+h, x:x+w]
+    #         image_st.coherence = st.coherence[y:y+h, x:x+w]
+
+    #         tasks.append((image_u, image_st))
+
+    # with ThreadPoolExecutor(max_workers=num_threads) as executor:
+    #     list(tqdm(executor.map(updateU, tasks), total=len(tasks)))
+
+    # for i in range(n):
+    #     for j in range(n):
+    #         w, h = chunk, chunk
+    #         x, y = w*i, h*j
+
+    #         if (i<4 or i>5): continue
+    #         if (j<2 or j>3): continue
+    #         image_uo[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
+
+    # for i in range(n+1):
+    #     for j in range(n+1):
+    #         w, h = chunk, chunk
+    #         x, y = w*i - w//2, h*j - h//2
+
+    #         if (i<4 or i>6): continue
+    #         if (j<2 or j>4): continue
+    #         if (i==4 and j==2): continue
+    #         if (i==6 and j==2): continue
+    #         if (i==4 and j==4): continue
+    #         if (i==6 and j==4): continue
+    #         image_up[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
+
+    # cx, cy = umb[0]-x0, umb[1]-y0
+
+    # image_ao = image_uo.copy()
+    # image_ap = image_up.copy()
+    # # image_ao[cy:, :] = image_ao[cy-1, :]
+    # # image_ap[cy:, :] = image_ap[cy-1, :]
+    # image_ao[:cy, :] = image_ao[cy, :]
+    # image_ap[:cy, :] = image_ap[cy, :]
+
+    # # image_ao = image_uo[:cy, :]
+    # # image_ap = image_up[:cy, :]
+
+    plt.figure(figsize=(10, 4))
+
+    plt.subplot(1, 3, 1)
+    colormap = cmap.Colormap("tab20", interpolation="nearest")
+    image = colormap(image_vo)
+    plt.imshow(image, aspect='equal')
+    plt.axis('off')
+
+    xp, yp = umb[0]-x0, umb[1]-y0
+    H, W = image_vo.shape
+
+    inertia = 0.95
+    radius, step_size, max_steps = 50, 10, 10000
+    center = np.array([yp, xp], dtype=np.float32)
+    angles = np.linspace(0, 2*np.pi, 100, endpoint=False)
+    all_points, all_theta = [], []
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(image_vo, aspect='equal', cmap='gray')
+    plt.scatter([xp], [yp], color='green')
+    plt.axis('off')
+
+    for angle in angles:
+        start = center + radius * np.array([-np.sin(angle), -np.cos(angle)])
+        trajectory = [start.copy()]
+
+        pos = start.copy()
+        last_dir = start - center
+        if np.linalg.norm(last_dir) == 0: continue
+        last_dir = last_dir / np.linalg.norm(last_dir)
+        pos += last_dir * step_size
+
+        for i in range(1, 10):
+            trajectory.append(center+last_dir*i*0.1)
+            all_points.append(center+last_dir*i*0.1)
+            all_theta.append(angle)
+        # trajectory.append(center.copy())
+        trajectory.append(pos.copy())
+        all_points.append(pos.copy())
+        all_theta.append(angle)
+
+        for _ in range(max_steps):
+            y, x = int(round(pos[0])), int(round(pos[1]))
+            if not (0 <= y < H and 0 <= x < W): break
+            field_dir = st.vector_u[y, x][::-1]
+            if np.linalg.norm(field_dir) == 0:
+                field_dir = last_dir
+            field_dir = field_dir / np.linalg.norm(field_dir)
+            direction = inertia * last_dir + (1 - inertia) * field_dir
+            pos += direction * step_size
+            if not (0 <= pos[0] < H and 0 <= pos[1] < W):
+                pos[0] = np.clip(pos[0], 0, H - 1)
+                pos[1] = np.clip(pos[1], 0, W - 1)
+                trajectory.append(pos.copy())
+                all_points.append(pos.copy())
+                all_theta.append(angle)
+                break
+            trajectory.append(pos.copy())
+            all_points.append(pos.copy())
+            all_theta.append(angle)
+            last_dir = direction
+
+        trajectory = np.array(trajectory)
+        plt.plot(trajectory[:, 1], trajectory[:, 0], lw=1)
+
+    all_points = np.array(all_points)
+    all_theta = np.array(all_theta)
+
+    ys, xs = np.mgrid[0:H, 0:W]
+    grid_pos = np.stack([ys.ravel(), xs.ravel()], axis=-1)   # (H*W, 2)
+
+    # tree = cKDTree(all_points)
+    # dist, idx = tree.query(grid_pos)
+    # dist, idx = tree.query(grid_pos, k=2)
+
+    # image_uo = all_theta[idx].reshape(H, W)
+
+    result = griddata(all_points, all_theta, grid_pos, method='linear')
+    image_uo = result.reshape(H, W)
+    image_uo = np.nan_to_num(image_uo, nan=0.0)
+
+    plt.subplot(1, 3, 3)
+    image_uo -= np.min(image_uo)
+    image_uo /= np.max(image_uo)
+    mask = np.sqrt((ys - yp)**2 + (xs - xp)**2) < radius
+    # image_uo[mask] = theta[mask]
+    # image_uo[mask] = 0
+
+    colormap = cmap.Colormap("tab20", interpolation="nearest")
+    image_u = colormap(image_uo)
+    plt.imshow(image_u, aspect='equal')
+    # plt.imshow(image_u, aspect='equal', cmap='gray')
+    plt.axis('off')
+
+    plt.show()
+
+    # plt.figure(figsize=(10, 4))
+    # show_image(image, image_ao, image_ap)
+    # # plt.connect('key_press_event', lambda event: on_key(event, images, images_uo, images_vo))
+    # plt.show()
 
     # save u, v result
     z_scroll_u[level][0, y0:y0+h0, x0:x0+w0] = (image_uo * 65535).astype(np.uint16)
     z_scroll_v[level][0, y0:y0+h0, x0:x0+w0] = (image_vo * 65535).astype(np.uint16)
-
-    plt.figure(figsize=(10, 4))
-    show_image(image, image_uo, image_vo)
-    # plt.connect('key_press_event', lambda event: on_key(event, images, images_uo, images_vo))
-    plt.show()
 
 if __name__ == '__main__':
     sys.exit(main())
