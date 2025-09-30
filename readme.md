@@ -15,4 +15,6 @@ Khartes wrote a script called [scroll_to_ome.py](https://github.com/KhartesViewe
 python scroll_to_ome.py ./evol1/02000.tif ./evol1/scroll.zarr
 ```
 
-## 
+## Notes
+
+More details later ...

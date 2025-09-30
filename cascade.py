@@ -421,12 +421,18 @@ def main():
     image_vp = image_vo.copy()
     theta = image_uo.copy()
 
+    plt.figure(figsize=(10, 4))
+    plt.subplot(1, 3, 1)
+    plt.imshow(image, cmap='gray', aspect='equal')
+    plt.axis('off')
+
     print('Compute Eigens ...')
     image = image.astype(np.float32) / 65535.
     st = ST(image)
     st.computeEigens()
 
-    print('Top-Down: solving level ', level)
+    print('Radius Calculation ...')
+    print('image_vo: solving level ', level)
     tasks = []
 
     for i in range(n):
@@ -446,7 +452,7 @@ def main():
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         list(tqdm(executor.map(updateST, tasks), total=len(tasks)))
 
-    print('Top-Down: solving level ', level)
+    print('image_vp: solving level ', level)
     tasks = []
 
     for i in range(n+1):
@@ -471,16 +477,15 @@ def main():
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         list(tqdm(executor.map(updateV, tasks), total=len(tasks)))
 
+    print('merge image_vo & image_vp')
     image_vo, image_vp = merge_level(image_vo, image_vp, 4)
     image_vo, image_vp = merge_level(image_vo, image_vp, 2)
     image_vo, image_vp = merge_level(image_vo, image_vp, 1)
 
-    plt.figure(figsize=(10, 4))
-
-    plt.subplot(1, 3, 1)
+    plt.subplot(1, 3, 2)
     colormap = cmap.Colormap("tab20", interpolation="nearest")
-    image = colormap(image_vo)
-    plt.imshow(image, aspect='equal')
+    image_v = colormap(image_vo)
+    plt.imshow(image_v, aspect='equal')
     plt.axis('off')
 
     xp, yp = umb[0]-x0, umb[1]-y0
@@ -493,16 +498,17 @@ def main():
     angles = np.linspace(0, 2*np.pi, 100, endpoint=False)
     all_points, all_angles = [], []
 
-    # edge interpolate handling
+    # edge interpolate handling (still a bit messy)
     lmin, lmax, rmin, rmax = H//2, H//2, H//2, H//2
     tmin, tmax, bmin, bmax = W//2, W//2, W//2, W//2
     angle_lmin, angle_lmax, angle_rmin, angle_rmax = 0, 0, 0, 0
     angle_tmin, angle_tmax, angle_bmin, angle_bmax = 0, 0, 0, 0
 
-    plt.subplot(1, 3, 3)
-    plt.imshow(image_vo, aspect='equal', cmap='gray')
-    plt.scatter([xp], [yp], color='green')
-    plt.axis('off')
+    print('Theta Calculation ...')
+    # plt.subplot(1, 3, 3)
+    # plt.imshow(image_vo, aspect='equal', cmap='gray')
+    # plt.scatter([xp], [yp], color='green')
+    # plt.axis('off')
 
     for angle in angles:
         path = []
@@ -554,7 +560,7 @@ def main():
             if finish: break
 
         path = np.array(path)
-        plt.plot(path[:, 1], path[:, 0], lw=1)
+        # plt.plot(path[:, 1], path[:, 0], lw=1)
 
     # left top corner
     angle_lt = lmin * angle_lmin + tmin * angle_tmin
@@ -591,7 +597,7 @@ def main():
     image_uo -= np.min(image_uo)
     image_uo /= np.max(image_uo)
 
-    plt.subplot(1, 3, 2)
+    plt.subplot(1, 3, 3)
     colormap = cmap.Colormap("tab20", interpolation="nearest")
     image_u = colormap(image_uo)
     plt.imshow(image_u, aspect='equal')
