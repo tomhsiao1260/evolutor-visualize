@@ -85,9 +85,9 @@ loadData()
 
 async function loadData() {
   const level = 3
-  const chunk = 50 * 8
-  const x0 = 250 + 0
-  const y0 = 125 + 0
+  const chunk = 100 * 8
+  const x0 = 16 + 0
+  const y0 = 0 + 0
 
   const volZarr = await openArray({
     store: "http://localhost:5173/",
