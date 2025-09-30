@@ -21,6 +21,8 @@ export class Shader extends ShaderMaterial {
         },
 
         vertexShader: /* glsl */ `
+            # define PI 3.141592653589793
+
             varying vec2 vUv;
             uniform sampler2D udata;
             uniform sampler2D vdata;
@@ -34,17 +36,16 @@ export class Shader extends ShaderMaterial {
                 float uValue = texture2D(udata, uv).r;
                 float vValue = texture2D(vdata, uv).r;
 
-                // vec3 pos = position;
-                // pos.x = (1.0 - flatten) * position.x - flatten * 2.0 * (uValue - 0.5);
-                // pos.y = (1.0 - flatten) * position.y + flatten * 2.0 * (vValue - 0.5);
+                vec2 c = vec2(cx, cy);
+                float ro = length(1.0 - c);
+                float th = 2.0 * PI * uValue;
+                vec2 n = vec2(cos(th), sin(th)) * -1.0;
+                vec2 p = ro * vValue * n;
+                p = (p + c) * 2.0 - 1.0;
 
                 vec3 pos = (position + 1.0) / 2.0;
-                vec2 delta = pos.xy - vec2(cx, cy);
-                float r = length(delta);
-                float ro = length(1.0 - vec2(cx, cy));
-                float s = ro / r * vValue;
-                pos.x = (1.0 - flatten) * position.x + flatten * ((s * (pos.x - cx) + cx) * 2.0 - 1.0);
-                pos.y = (1.0 - flatten) * position.y + flatten * ((s * (pos.y - cy) + cy) * 2.0 - 1.0);
+                pos.x = (1.0 - flatten) * position.x + flatten * p.x;
+                pos.y = (1.0 - flatten) * position.y + flatten * p.y;
 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4( pos, 1.0 );
             }`,
