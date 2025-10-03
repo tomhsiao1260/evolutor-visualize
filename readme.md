@@ -27,13 +27,13 @@ This approach greatly speeds up the matrix solving process—calculations can be
 
 The image below shows the local computation of radius (8×8 chunks) and the gradual merging of the results (from left to right). Interestingly, I don’t need to provide scroll umbilicus coordinates; the merging process can automatically find out the global minimum.
 
-![Merging Process](assets/radius.png)
+![Radius](assets/radius.png)
 
 Although this approach works for radius, the decomposition and merging in the theta direction haven’t been successful so far, which is something I might explore further in the future.
 
 However, I’ve found another way to quickly and roughly generate theta coordinates: by using the guidance of the structure tensor. Centered at the scroll umbilicus, shoot 100 rays outward at different angles and use interpolation to estimate the angular information in the rest of the areas.
 
-![Merging Process](assets/theta.png)
+![Theta](assets/theta.png)
 
 ## Visualization
 
