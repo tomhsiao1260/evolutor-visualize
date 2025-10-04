@@ -19,10 +19,12 @@ def solveAxEqb(A, b):
     AtA = At @ A
     # print("AtA", AtA.shape, sparse.issparse(AtA))
     # print("ata", ata.shape, ata.dtype, ata[ata!=0], np.argwhere(ata))
-    asum = np.abs(AtA).sum(axis=0)
+    # asum = np.abs(AtA).sum(axis=0)
     # print("asum", np.argwhere(asum==0))
     Atb = At @ b
     # print("Atb", Atb.shape, sparse.issparse(Atb))
+    N = AtA.shape[0]
+    AtA = AtA + sparse.eye(N, format='csc') * 1e-6
 
     lu = sparse.linalg.splu(AtA.tocsc())
     # print("lu created")
@@ -54,60 +56,16 @@ def solveUV0(basew, st, smoothing_weight, axis='u'):
     out += basew
     return out
 
-def solveUV1(basew, st, smoothing_weight, cross_weight, axis='u'):
-    icw = 1.-cross_weight
-    uvec = st.vector_u
-    coh = st.coherence.copy()
-    coh = coh[:,:,np.newaxis]
-    wuvec = coh*uvec
-
-    shape = wuvec.shape[:2]
-    sparse_u_cross_g = ImageViewer.sparseVecOpGrad(wuvec, is_cross=True)
-    sparse_u_dot_g = ImageViewer.sparseVecOpGrad(wuvec, is_cross=False)
-    sparse_grad = ImageViewer.sparseGrad(shape)
-    sgx, sgy = ImageViewer.sparseGrad(shape, interleave=False)
-    hxx = sgx.transpose() @ sgx
-    hyy = sgy.transpose() @ sgy
-    hxy = sgx @ sgy
-
-    A = sparse.vstack((icw*sparse_u_dot_g, cross_weight*sparse_u_cross_g, smoothing_weight*hxx, smoothing_weight*hyy))
-
-    b = np.zeros((A.shape[0]), dtype=np.float64)
+def solveUV1(basew, st, axis='u'):
+    h, w = basew.shape
+    x, y = np.meshgrid(np.linspace(0, 1, w), np.linspace(0, 1, h))
+    uvec = np.mean(st.vector_u, axis=(0,1))
     if axis == 'v':
-        b[:basew.size] = 1.*coh.flatten()*icw
+        out = uvec[0] * x + uvec[1] * y
     else:
-        b[basew.size:2*basew.size] = 1.*coh.flatten()*cross_weight
-
-    x = solveAxEqb(A, b)
-    out = x.reshape(basew.shape)
-    return out
-
-def solveTheta(st, rad, theta, uvec, coh, dot_weight, smoothing_weight, theta_weight):
-    oldshape = rad.shape
-    coh = coh[:,:,np.newaxis]
-    weight = coh.copy()
-    wuvec = weight*uvec
-    # rwuvec = wuvec
-    rwuvec = rad[:,:,np.newaxis]*wuvec
-
-    shape = theta.shape
-    # sparse_grad = ImageViewer.sparseGrad(shape)
-    sparse_grad = ImageViewer.sparseGrad(shape, rad)
-    sparse_u_cross_g = ImageViewer.sparseVecOpGrad(rwuvec, is_cross=True)
-    sparse_u_dot_g = ImageViewer.sparseVecOpGrad(rwuvec, is_cross=False)
-    sparse_theta = ImageViewer.sparseDiagonal(shape)
-    sparse_all = sparse.vstack((sparse_u_cross_g, dot_weight*sparse_u_dot_g, smoothing_weight*sparse_grad, theta_weight*sparse_theta))
-    # print("sparse_all", sparse_all.shape)
-
-    b_dot = np.zeros((sparse_u_dot_g.shape[0]), dtype=np.float64)
-    b_cross = weight.flatten()
-    b_grad = np.zeros((sparse_grad.shape[0]), dtype=np.float64)
-    b_theta = theta.flatten()
-    b_all = np.concatenate((b_cross, dot_weight*b_dot, smoothing_weight*b_grad, theta_weight*b_theta))
-    # print("b_all", b_all.shape)
-
-    x = solveAxEqb(sparse_all, b_all)
-    out = x.reshape(shape)
+        out = -uvec[1] * x + uvec[0] * y
+    out -= np.min(out)
+    out /= np.max(out)
     return out
 
 def divp1(s, c):
@@ -150,7 +108,7 @@ def updateST(args):
 
     ImageViewer.alignUVVec(v0, st)
 
-    v1 = solveUV1(image_v, st, smoothing_weight=.1, cross_weight=.7, axis='v')
+    v1 = solveUV1(image_v, st, axis='v')
     if (np.min(v1) != np.max(v1)):
         v1 -= np.min(v1)
         v1 /= np.max(v1)
@@ -161,24 +119,13 @@ def updateST(args):
     np.copyto(image_v, v1)
 
 def updateU(args):
-    image_u, st, rad, theta, uvec, coh, dot_weight, smoothing_weight, theta_weight = args
-    # image_u, st = args
-
-    # u1 = solveUV0(image_u, st, smoothing_weight=.5, axis='u')
-    # u1 = solveUV1(image_u, st, smoothing_weight=.2, cross_weight=.7, axis='u')
-    u1 = solveTheta(st, rad, theta, uvec, coh, dot_weight, smoothing_weight, theta_weight)
-    if (np.min(u1) != np.max(u1)):
-        u1 -= np.min(u1)
-        u1 /= np.max(u1)
+    image_u, st = args
+    u1 = solveUV1(image_u, st, axis='u')
     np.copyto(image_u, u1)
 
 def updateV(args):
     image_v, st = args
-
-    v1 = solveUV1(image_v, st, smoothing_weight=.1, cross_weight=.7, axis='v')
-    if (np.min(v1) != np.max(v1)):
-        v1 -= np.min(v1)
-        v1 /= np.max(v1)
+    v1 = solveUV1(image_v, st, axis='v')
     np.copyto(image_v, v1)
 
 def on_key(event, images, images_u, images_v):
@@ -387,7 +334,6 @@ def merge_window(window_o, window_p):
 
     x, y, w, h = chunk, 0, chunk, chunk*2
     chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
-
     return merge_chunk(chunk_vv, chunk_hh)
 
 def merge_level(image_o, image_p, n):
@@ -436,15 +382,13 @@ def main():
     num_threads = args.num_threads
 
     num_plot = 7
-    ni, nj = 5, 6
-    # level, n, chunk = 3, 4, 200
-    # level, n, chunk = 3, 8, 100
-    # level, n, chunk = 3, 16, 50
-    level, n, chunk = 3, 8, 50
+    ni, nj = 4*12, 10*12
+    # level, n, chunk = 3, 64, 6
+    level, n, chunk = 3, 32, 12
+
     decimation = 2**level
     w0, h0 = chunk*n, chunk*n
-    x0, y0 = 128//decimation + ni*chunk, 0//decimation + nj*chunk
-    # x0, y0 = 128//decimation, 0//decimation
+    x0, y0 = 128//decimation + ni, 0//decimation + nj
     umb = np.array([3900, 2304]) // decimation
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
@@ -477,6 +421,7 @@ def main():
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
             image_st.vector_v = st.vector_v[y:y+h, x:x+w]
             image_st.coherence = st.coherence[y:y+h, x:x+w]
+            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
             tasks.append((image_v, image_st))
 
@@ -502,6 +447,7 @@ def main():
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
             image_st.vector_v = st.vector_v[y:y+h, x:x+w]
             image_st.coherence = st.coherence[y:y+h, x:x+w]
+            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
             tasks.append((image_v, image_st))
 
@@ -521,23 +467,9 @@ def main():
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
             image_st.vector_v = st.vector_v[y:y+h, x:x+w]
             image_st.coherence = st.coherence[y:y+h, x:x+w]
+            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
-            dot_weight = .001
-            smoothing_weight = .4
-            theta_weight = .0001
-
-            rad = image_vo[y:y+h, x:x+w].copy()
-            rad -= np.min(rad)
-            rad /= np.max(rad)
-            rad += 10
-            th = theta[y:y+h, x:x+w].copy()
-            th -= np.min(th)
-            th /= np.max(th)
-            uvec, coh = ImageViewer.synthesizeUVecArray(rad)
-
-            # st, rad, theta, uvec, coh, dot_weight, smoothing_weight, theta_weight
-            tasks.append((image_u, image_st, rad, th, uvec, coh, dot_weight, smoothing_weight, theta_weight))
-            # tasks.append((image_u, image_st))
+            tasks.append((image_u, image_st))
 
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         list(tqdm(executor.map(updateU, tasks), total=len(tasks)))
@@ -561,22 +493,9 @@ def main():
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
             image_st.vector_v = st.vector_v[y:y+h, x:x+w]
             image_st.coherence = st.coherence[y:y+h, x:x+w]
+            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
-            dot_weight = .001
-            smoothing_weight = .4
-            theta_weight = .0001
-
-            rad = image_vp[y:y+h, x:x+w].copy()
-            rad -= np.min(rad)
-            rad /= np.max(rad)
-            rad += 10
-            th = theta[y:y+h, x:x+w].copy()
-            th -= np.min(th)
-            th /= np.max(th)
-            uvec, coh = ImageViewer.synthesizeUVecArray(rad)
-
-            # st, rad, theta, uvec, coh, dot_weight, smoothing_weight, theta_weight
-            tasks.append((image_u, image_st, rad, th, uvec, coh, dot_weight, smoothing_weight, theta_weight))
+            tasks.append((image_u, image_st))
 
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         list(tqdm(executor.map(updateU, tasks), total=len(tasks)))
@@ -605,13 +524,17 @@ def main():
     plt.axis('off')
 
     print('merge image_vo & image_vp')
-    # image_vo, image_vp = merge_level(image_vo, image_vp, 8)
+    # image_vo, image_vp = merge_level(image_vo, image_vp, 32)
+    image_vo, image_vp = merge_level(image_vo, image_vp, 16)
+    image_vo, image_vp = merge_level(image_vo, image_vp, 8)
     image_vo, image_vp = merge_level(image_vo, image_vp, 4)
     image_vo, image_vp = merge_level(image_vo, image_vp, 2)
     image_vo, image_vp = merge_level(image_vo, image_vp, 1)
 
     print('merge image_uo & image_up')
-    # image_uo, image_up = merge_level(image_uo, image_up, 8)
+    # image_uo, image_up = merge_level(image_uo, image_up, 32)
+    image_uo, image_up = merge_level(image_uo, image_up, 16)
+    image_uo, image_up = merge_level(image_uo, image_up, 8)
     image_uo, image_up = merge_level(image_uo, image_up, 4)
     image_uo, image_up = merge_level(image_uo, image_up, 2)
     image_uo, image_up = merge_level(image_uo, image_up, 1)
@@ -621,6 +544,9 @@ def main():
     plt.axis('off')
 
     plt.subplot(1, num_plot, 7)
+    # plt.imshow(st.coherence, aspect='equal')
+    # plt.imshow(st.linearity, aspect='equal')
+    # plt.imshow(st.isotropy, aspect='equal')
     plt.imshow(colormap(image_vo), aspect='equal')
     plt.axis('off')
 
