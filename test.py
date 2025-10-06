@@ -364,6 +364,16 @@ def merge_level(image_o, image_p, n):
 
     return image_oo, image_pp
 
+def merge_split(image_o, image_p, split):
+    image_oo = image_o.copy()
+    image_pp = image_o.copy()
+
+    while split > 1:
+        split = split // 2
+        image_oo, image_pp = merge_level(image_oo, image_pp, split)
+
+    return image_oo
+
 def main():
     parser = argparse.ArgumentParser(
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -381,18 +391,24 @@ def main():
     # input_ome_zarr = args.input_ome_zarr
     num_threads = args.num_threads
 
+    level = 3
     num_plot = 7
-    ni, nj = 4*12, 10*12
-    # level, n, chunk = 3, 64, 6
-    level, n, chunk = 3, 32, 12
-
     decimation = 2**level
-    w0, h0 = chunk*n, chunk*n
-    x0, y0 = 128//decimation + ni, 0//decimation + nj
-    umb = np.array([3900, 2304]) // decimation
+    umb = np.array([3800, 2304]) // decimation
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
     z_scroll_v = zarr.open('./evol1/scroll_v.zarr/', mode='a')
+
+    # ni, nj, n, chunk = 8*12, 10*12, 4, 50
+    # ni, nj, n, chunk = 8*12, 10*12, 16, 12
+    # ni, nj, n, chunk = 100, 100, 32, 12
+    # ni, nj, n, chunk = 4*12, 10*12, 32, 12
+    # ni, nj, n, chunk = 4*12, 10*12, 64, 6
+    n, chunk = 32, 12
+    ni, nj = umb[0] - chunk*n//2, umb[1] - chunk*n//2
+
+    w0, h0 = chunk*n, chunk*n
+    x0, y0 = 128//decimation + ni, 0//decimation + nj
 
     image = z_scroll[level][0, y0:y0+h0, x0:x0+w0]
     image_uo = createThetaArray(umb, x0, y0, w0, h0)
@@ -406,15 +422,15 @@ def main():
     st = ST(image)
     st.computeEigens()
 
-    print('Radius Calculation ...')
-    print('image_vo: solving level ', level)
-    tasks = []
+    print('Compute image_uo, image_vo')
+    u_tasks, v_tasks = [], []
 
     for i in range(n):
         for j in range(n):
             w, h = chunk, chunk
             x, y = w*i, h*j
 
+            image_u = image_uo[y:y+h, x:x+w]
             image_v = image_vo[y:y+h, x:x+w]
 
             image_st = Struct()
@@ -423,59 +439,16 @@ def main():
             image_st.coherence = st.coherence[y:y+h, x:x+w]
             image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
-            tasks.append((image_v, image_st))
+            u_tasks.append((image_u, image_st))
+            v_tasks.append((image_v, image_st))
 
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        list(tqdm(executor.map(updateST, tasks), total=len(tasks)))
-
-    print('image_vp: solving level ', level)
-    tasks = []
-
-    for i in range(n+1):
-        for j in range(n+1):
-            w, h = chunk, chunk
-            x, y = w*i - w//2, h*j - h//2
-
-            if (i == 0): x = 0
-            if (j == 0): y = 0
-            if (i == 0 or i == n): w = chunk//2
-            if (j == 0 or j == n): h = chunk//2
-
-            image_v = image_vp[y:y+h, x:x+w]
-
-            image_st = Struct()
-            image_st.vector_u = st.vector_u[y:y+h, x:x+w]
-            image_st.vector_v = st.vector_v[y:y+h, x:x+w]
-            image_st.coherence = st.coherence[y:y+h, x:x+w]
-            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
-
-            tasks.append((image_v, image_st))
-
+        list(tqdm(executor.map(updateST, v_tasks), total=len(v_tasks)))
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        list(tqdm(executor.map(updateV, tasks), total=len(tasks)))
+        list(tqdm(executor.map(updateU, u_tasks), total=len(u_tasks)))
 
-    tasks = []
-
-    for i in range(n):
-        for j in range(n):
-            w, h = chunk, chunk
-            x, y = w*i, h*j
-
-            image_u = image_uo[y:y+h, x:x+w]
-
-            image_st = Struct()
-            image_st.vector_u = st.vector_u[y:y+h, x:x+w]
-            image_st.vector_v = st.vector_v[y:y+h, x:x+w]
-            image_st.coherence = st.coherence[y:y+h, x:x+w]
-            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
-
-            tasks.append((image_u, image_st))
-
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        list(tqdm(executor.map(updateU, tasks), total=len(tasks)))
-
-    print('image_vp: solving level ', level)
-    tasks = []
+    print('Compute image_up, image_vp')
+    u_tasks, v_tasks = [], []
 
     for i in range(n+1):
         for j in range(n+1):
@@ -488,6 +461,7 @@ def main():
             if (j == 0 or j == n): h = chunk//2
 
             image_u = image_up[y:y+h, x:x+w]
+            image_v = image_vp[y:y+h, x:x+w]
 
             image_st = Struct()
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
@@ -495,10 +469,13 @@ def main():
             image_st.coherence = st.coherence[y:y+h, x:x+w]
             image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
-            tasks.append((image_u, image_st))
+            u_tasks.append((image_u, image_st))
+            v_tasks.append((image_v, image_st))
 
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        list(tqdm(executor.map(updateU, tasks), total=len(tasks)))
+        list(tqdm(executor.map(updateU, u_tasks), total=len(u_tasks)))
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        list(tqdm(executor.map(updateV, v_tasks), total=len(v_tasks)))
 
     plt.figure(figsize=(13, 4))
     colormap = cmap.Colormap("tab20", interpolation="nearest")
@@ -524,29 +501,64 @@ def main():
     plt.axis('off')
 
     print('merge image_vo & image_vp')
-    # image_vo, image_vp = merge_level(image_vo, image_vp, 32)
-    image_vo, image_vp = merge_level(image_vo, image_vp, 16)
-    image_vo, image_vp = merge_level(image_vo, image_vp, 8)
-    image_vo, image_vp = merge_level(image_vo, image_vp, 4)
-    image_vo, image_vp = merge_level(image_vo, image_vp, 2)
-    image_vo, image_vp = merge_level(image_vo, image_vp, 1)
 
     print('merge image_uo & image_up')
-    # image_uo, image_up = merge_level(image_uo, image_up, 32)
-    image_uo, image_up = merge_level(image_uo, image_up, 16)
-    image_uo, image_up = merge_level(image_uo, image_up, 8)
-    image_uo, image_up = merge_level(image_uo, image_up, 4)
-    image_uo, image_up = merge_level(image_uo, image_up, 2)
-    image_uo, image_up = merge_level(image_uo, image_up, 1)
+    split = n // 2
+    x, y, w, h = 0, 0, chunk*n//2, chunk*n//2
+    t_left = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
+    t_mid = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//2, 0, chunk*n//2, chunk*n//2
+    t_right = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = 0, chunk*n//2, chunk*n//2, chunk*n//2
+    b_left = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//4, chunk*n//2, chunk*n//2, chunk*n//2
+    b_mid = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//2, chunk*n//2, chunk*n//2, chunk*n//2
+    b_right = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//2, 0, chunk*n//2, chunk*n//2
+    r_top = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//2, chunk*n//4, chunk*n//2, chunk*n//2
+    r_mid = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    split = n // 2
+    x, y, w, h = chunk*n//2, chunk*n//2, chunk*n//2, chunk*n//2
+    r_bot = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+
+    x, y, w, h = 0, 0, chunk*n, chunk*n//2
+    image_uo[y:y+h, x:x+w] = merge_bridge(t_left, t_mid, t_right)
+    image_uo[y:y+h, x:x+w] -= np.min(image_uo[y:y+h, x:x+w])
+    image_uo[y:y+h, x:x+w] /= np.max(image_uo[y:y+h, x:x+w])
+
+    x, y, w, h = 0, chunk*n//2, chunk*n, chunk*n//2
+    image_uo[y:y+h, x:x+w] = merge_bridge(b_left, b_mid, b_right)
+    image_uo[y:y+h, x:x+w] -= np.min(image_uo[y:y+h, x:x+w])
+    image_uo[y:y+h, x:x+w] /= np.max(image_uo[y:y+h, x:x+w])
+
+    x, y, w, h = chunk*n//2, 0, chunk*n//2, chunk*n
+    image_vo[y:y+h, x:x+w] = merge_bridge(r_top.T, r_mid.T, r_bot.T).T
+    image_vo[y:y+h, x:x+w] -= np.min(image_vo[y:y+h, x:x+w])
+    image_vo[y:y+h, x:x+w] /= np.max(image_vo[y:y+h, x:x+w])
 
     plt.subplot(1, num_plot, 6)
     plt.imshow(colormap(image_uo), aspect='equal')
     plt.axis('off')
 
     plt.subplot(1, num_plot, 7)
-    # plt.imshow(st.coherence, aspect='equal')
-    # plt.imshow(st.linearity, aspect='equal')
-    # plt.imshow(st.isotropy, aspect='equal')
     plt.imshow(colormap(image_vo), aspect='equal')
     plt.axis('off')
 
