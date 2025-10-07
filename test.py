@@ -372,7 +372,7 @@ def merge_split(image_o, image_p, split):
         split = split // 2
         image_oo, image_pp = merge_level(image_oo, image_pp, split)
 
-    return image_oo
+    return image_oo, image_pp
 
 def main():
     parser = argparse.ArgumentParser(
@@ -394,33 +394,46 @@ def main():
     level = 3
     num_plot = 7
     decimation = 2**level
-    umb = np.array([3800, 2304]) // decimation
+    umb = np.array([3900, 2304]) // decimation
     z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
     z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
     z_scroll_v = zarr.open('./evol1/scroll_v.zarr/', mode='a')
 
-    # ni, nj, n, chunk = 8*12, 10*12, 4, 50
-    # ni, nj, n, chunk = 8*12, 10*12, 16, 12
-    # ni, nj, n, chunk = 100, 100, 32, 12
-    # ni, nj, n, chunk = 4*12, 10*12, 32, 12
-    # ni, nj, n, chunk = 4*12, 10*12, 64, 6
-    n, chunk = 32, 12
-    ni, nj = umb[0] - chunk*n//2, umb[1] - chunk*n//2
+    # x0, y0, n, chunk = 8*12, 10*12, 4, 50
+    # x0, y0, n, chunk = 8*12, 10*12, 16, 12
+    # x0, y0, n, chunk = 100, 100, 32, 12
+    # x0, y0, n, chunk = 4*12, 10*12, 32, 12
+    # x0, y0, n, chunk = 4*12, 10*12, 64, 6
 
+    n, chunk = 8, 12
+    # n, chunk = 32, 12
     w0, h0 = chunk*n, chunk*n
-    x0, y0 = 128//decimation + ni, 0//decimation + nj
+    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2
 
     image = z_scroll[level][0, y0:y0+h0, x0:x0+w0]
     image_uo = createThetaArray(umb, x0, y0, w0, h0)
     image_vo = createRadiusArray(umb, x0, y0, w0, h0)
     image_up = image_uo.copy()
     image_vp = image_vo.copy()
+    radius =  image_vo.copy()
     theta = image_uo.copy()
 
     print('Compute Eigens ...')
     image = image.astype(np.float32) / 65535.
     st = ST(image)
     st.computeEigens()
+
+    m = n
+    for i in range(m):
+        for j in range(m):
+            w, h = chunk, chunk
+            cx, cy = chunk*n//2, chunk*n//2
+            x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2
+
+            uvec = np.array([x+chunk//2-cx, y+chunk//2-cy])
+            norm = np.linalg.norm(uvec)
+            uvec = uvec / norm
+            st.vector_u[y:y+h, x:x+w] = uvec
 
     print('Compute image_uo, image_vo')
     u_tasks, v_tasks = [], []
@@ -437,7 +450,6 @@ def main():
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
             image_st.vector_v = st.vector_v[y:y+h, x:x+w]
             image_st.coherence = st.coherence[y:y+h, x:x+w]
-            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
             u_tasks.append((image_u, image_st))
             v_tasks.append((image_v, image_st))
@@ -467,7 +479,6 @@ def main():
             image_st.vector_u = st.vector_u[y:y+h, x:x+w]
             image_st.vector_v = st.vector_v[y:y+h, x:x+w]
             image_st.coherence = st.coherence[y:y+h, x:x+w]
-            image_st.isotropy = st.isotropy[y:y+h, x:x+w]
 
             u_tasks.append((image_u, image_st))
             v_tasks.append((image_v, image_st))
@@ -476,6 +487,30 @@ def main():
         list(tqdm(executor.map(updateU, u_tasks), total=len(u_tasks)))
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         list(tqdm(executor.map(updateV, v_tasks), total=len(v_tasks)))
+
+    # for i in range(2):
+    #     for j in range(2):
+    #         w, h = chunk, chunk
+    #         cx, cy = chunk*n//2, chunk*n//2
+    #         x, y = w*i + cx - w, h*j + cy - h
+
+    #         image_uo[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
+    # for i in range(3):
+    #     for j in range(3):
+    #         if (i==0 and j==0): continue
+    #         if (i==2 and j==0): continue
+    #         if (i==0 and j==2): continue
+    #         if (i==2 and j==2): continue
+
+    #         w, h = chunk, chunk
+    #         cx, cy = chunk*n//2, chunk*n//2
+    #         x, y = w*i + cx - w*3//2, h*j + cy - h*3//2
+
+    #         image_up[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
+    image_uo = theta.copy()
+    image_up = theta.copy()
+    image_vo = radius.copy()
+    image_vp = radius.copy()
 
     plt.figure(figsize=(13, 4))
     colormap = cmap.Colormap("tab20", interpolation="nearest")
@@ -501,58 +536,54 @@ def main():
     plt.axis('off')
 
     print('merge image_vo & image_vp')
+    # split = n
+    # image_vo = merge_split(image_vo, image_vp, split)
+
+    split = n
+    aa, _ = merge_split(image_vo, image_vp, split)
+
+    bb, _ = merge_split(image_vo[::-1, :].T, image_vp[::-1, :].T, split)
+    bb = bb.T[::-1, :]
+
+    image_vo = (aa + bb) / 2
 
     print('merge image_uo & image_up')
-    split = n // 2
-    x, y, w, h = 0, 0, chunk*n//2, chunk*n//2
-    t_left = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    # split = n // 2
+    # x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
+    # image_uo[y:y+h, x:x+w], _ = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
 
     split = n // 2
     x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
-    t_mid = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    aa, _ = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
 
     split = n // 2
-    x, y, w, h = chunk*n//2, 0, chunk*n//2, chunk*n//2
-    t_right = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
+    bb, _ = merge_split(image_uo[y:y+h, x:x+w][::-1, :].T, image_up[y:y+h, x:x+w][::-1, :].T, split)
+    bb = bb.T[::-1, :]
 
-    split = n // 2
-    x, y, w, h = 0, chunk*n//2, chunk*n//2, chunk*n//2
-    b_left = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    image_uo[y:y+h, x:x+w] = (aa + bb) / 2
 
-    split = n // 2
-    x, y, w, h = chunk*n//4, chunk*n//2, chunk*n//2, chunk*n//2
-    b_mid = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    # split = n // 4
+    # x, y, w, h = chunk*n//4, 0, chunk*n//4, chunk*n//4
+    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
 
-    split = n // 2
-    x, y, w, h = chunk*n//2, chunk*n//2, chunk*n//2, chunk*n//2
-    b_right = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    # split = n // 4
+    # x, y, w, h = chunk*n//4, chunk*n//4, chunk*n//4, chunk*n//4
+    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
 
-    split = n // 2
-    x, y, w, h = chunk*n//2, 0, chunk*n//2, chunk*n//2
-    r_top = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    # split = n // 4
+    # x, y, w, h = chunk*n//2, 0, chunk*n//4, chunk*n//4
+    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
 
-    split = n // 2
-    x, y, w, h = chunk*n//2, chunk*n//4, chunk*n//2, chunk*n//2
-    r_mid = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    # split = n // 4
+    # x, y, w, h = chunk*n//2, chunk*n//4, chunk*n//4, chunk*n//4
+    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
 
-    split = n // 2
-    x, y, w, h = chunk*n//2, chunk*n//2, chunk*n//2, chunk*n//2
-    r_bot = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    # x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
+    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], 1)
 
-    x, y, w, h = 0, 0, chunk*n, chunk*n//2
-    image_uo[y:y+h, x:x+w] = merge_bridge(t_left, t_mid, t_right)
-    image_uo[y:y+h, x:x+w] -= np.min(image_uo[y:y+h, x:x+w])
-    image_uo[y:y+h, x:x+w] /= np.max(image_uo[y:y+h, x:x+w])
-
-    x, y, w, h = 0, chunk*n//2, chunk*n, chunk*n//2
-    image_uo[y:y+h, x:x+w] = merge_bridge(b_left, b_mid, b_right)
-    image_uo[y:y+h, x:x+w] -= np.min(image_uo[y:y+h, x:x+w])
-    image_uo[y:y+h, x:x+w] /= np.max(image_uo[y:y+h, x:x+w])
-
-    x, y, w, h = chunk*n//2, 0, chunk*n//2, chunk*n
-    image_vo[y:y+h, x:x+w] = merge_bridge(r_top.T, r_mid.T, r_bot.T).T
-    image_vo[y:y+h, x:x+w] -= np.min(image_vo[y:y+h, x:x+w])
-    image_vo[y:y+h, x:x+w] /= np.max(image_vo[y:y+h, x:x+w])
+    # x, y, w, h = chunk*n//2 - chunk*n//16, chunk*n//2 - chunk*n//16, chunk*n//8, chunk*n//8
+    # image_uo[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
 
     plt.subplot(1, num_plot, 6)
     plt.imshow(colormap(image_uo), aspect='equal')
