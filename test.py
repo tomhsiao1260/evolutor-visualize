@@ -98,6 +98,19 @@ def createThetaArray(umb, x, y, w, h):
     theta /= np.max(theta)
     return theta
 
+# ymin = a*xmin + b, ymax = a*xmax + b
+def scale_shift(x, y):
+    l = x.flatten().shape[0]
+    xmax, xmin = np.max(x), np.min(x)
+    ymax, ymin = np.max(y), np.min(y)
+    if (xmax - xmin > 0.005 * l):
+        a = (ymax - ymin) / (xmax - xmin)
+        b = (ymin * xmax - ymax * xmin) / (xmax - xmin)
+    else:
+        a = 1
+        b = (ymax + ymin) / 2 - (xmax + xmin) / 2
+    return a, b
+
 def updateST(args):
     image_v, st = args
 
@@ -159,7 +172,8 @@ def show_image(image, image_u, image_v):
 
     plt.draw()
 
-def merge_chunk(chunk_v, chunk_h):
+def merge_chunk(image_h, image_v, debug=False, mode=0):
+    chunk_h, chunk_v = image_h.copy(), image_v.copy()
     height, width = chunk_v.shape
 
     # vertical rectangle (left)
@@ -181,74 +195,104 @@ def merge_chunk(chunk_v, chunk_h):
     l_right_bottom = merge_rectangle(rect_v[::-1, ::-1], rect_h[::-1, ::-1])
     l_right_bottom = l_right_bottom[::-1, ::-1]
 
-    chunk_m = merge_Lshape(l_left_top, l_right_bottom)
+    if debug:
+        if mode==0: return chunk_h
+        if mode==1: return chunk_v
+        if mode==2: return l_left_top
+        if mode==3: return l_right_bottom
 
+    chunk_m = merge_Lshape(l_left_top, l_right_bottom)
     return chunk_m
 
-def merge_rectangle(rect_v, rect_h):
+def merge_rectangle(image_v, image_h):
+    rect_v, rect_h = image_v.copy(), image_h.copy()
     height, width = rect_v.shape[0], rect_h.shape[1]
+    ws, hs = rect_v.shape[1], rect_h.shape[0]
     rect_m = np.zeros((height, width))
 
     # top-left
-    x, y, w, h = 0, 0, width//2, height//2
+    x, y, w, h = 0, 0, ws, hs
     region0 = (rect_v[y:y+h, x:x+w] + rect_h[y:y+h, x:x+w]) / 2
     rect_m[y:y+h, x:x+w] = region0
     # top-right
-    x, y, w, h = width//2, 0, width//2, height//2
+    x, y, w, h = ws-1, 0, width-ws+1, hs
+    a, b = scale_shift(rect_h[:, x:x+1], region0[:, -1:])
+    rect_h = a * rect_h + b
     region1 = rect_h[y:y+h, x:x+w]
-    region1 += region0[:, x-1:x] - rect_h[:, x:x+1]
+    region1 += region0[:, -1:] - rect_h[:, x:x+1]
     rect_m[y:y+h, x:x+w] = region1
     # bottom-left
-    x, y, w, h = 0, height//2, width//2, height//2
+    x, y, w, h = 0, hs-1, ws, height-hs+1
+    a, b = scale_shift(rect_v[y:y+1, :], region0[-1:, :])
+    rect_v = a * rect_v + b
     region2 = rect_v[y:y+h, x:x+w]
-    region2 += region0[y-1:y, :] - rect_v[y:y+1, :]
+    region2 += region0[-1:, :] - rect_v[y:y+1, :]
     rect_m[y:y+h, x:x+w] = region2
-
-    # normalize
-    value_min = min(np.min(region0), np.min(region1), np.min(region2))
-    value_max = max(np.max(region0), np.max(region1), np.max(region2))
-    if (value_max != value_min):
-        rect_m -= value_min
-        rect_m /= value_max - value_min
     return rect_m
 
 def merge_Lshape(l_left_top, l_right_bottom):
-    height, width = l_left_top.shape
-    chunk = np.zeros((height, width))
+    h0, w0 = l_left_top.shape
+    chunk = np.zeros((h0, w0))
 
     # center calibration
-    c_lt = l_left_top[height//2-1, width//2-1]
-    c_rb = l_right_bottom[height//2, width//2]
-    l_left_top += (c_rb - c_lt) / 2
-    l_right_bottom += (c_lt - c_rb) / 2
+    c_lt = l_left_top[h0//2, w0//2-1] + l_left_top[h0//2-1, w0//2]
+    c_lt /= 2
+    c_rb = l_right_bottom[h0//2, w0//2-1] + l_right_bottom[h0//2-1, w0//2]
+    c_rb /= 2
+    l_left_top -= c_lt
+    l_right_bottom -= c_rb
+    # l_left_top += (c_rb - c_lt) / 2
+    # l_right_bottom += (c_lt - c_rb) / 2
 
-    angle_array = create_angle_array(height//2)
+    # scale calibration
+    x, y, w, h = w0//2, 0, w0//2, h0//2
+    a = l_left_top[y:y+h, x:x+w]
+    b = l_right_bottom[y:y+h, x:x+w]
+    x, y, w, h = 0, h0//2, w0//2, h0//2
+    c = l_left_top[y:y+h, x:x+w]
+    d = l_right_bottom[y:y+h, x:x+w]
+    # scale factor
+    # scale = np.trace(a[:,::-1]) / (np.trace(b[:,::-1]) + 1e-7)
+    # scale += np.trace(c[:,::-1]) / (np.trace(d[:,::-1]) + 1e-7)
+    # scale /= 2
+    # scale = (np.sum(a) + np.sum(c)) / (np.sum(b) + np.sum(d) + 1e-7)
+    lt_max = max(np.max(a), np.max(c))
+    lt_min = min(np.min(a), np.min(c))
+    rb_max = max(np.max(b), np.max(d))
+    rb_min = min(np.min(b), np.min(d))
+    scale = (lt_max - lt_min) / (rb_max - rb_min + 1e-7)
+    l_right_bottom = l_right_bottom * scale
+
+    angle_array = create_angle_array(h0//2)
     angle_region1 = angle_array.copy()[::-1, :]
     angle_region2 = angle_array.copy()[::-1, :].T
-
+    # angle_region1[angle_region1 > 0.5] = 1
+    # angle_region1[angle_region1 <= 0.5] = 0
+    # angle_region2[angle_region2 > 0.5] = 1
+    # angle_region2[angle_region2 <= 0.5] = 0
+ 
     # region 0 (left, top)
-    x, y, w, h = 0, 0, width//2, height//2
+    x, y, w, h = 0, 0, w0//2, h0//2
     region0 = l_left_top[y:y+h, x:x+w]
     chunk[y:y+h, x:x+w] = region0
     # region 1 mixed (right, top)
-    x, y, w, h = width//2, 0, width//2, height//2
+    x, y, w, h = w0//2, 0, w0//2, h0//2
+    # region1 = l_left_top[y:y+h, x:x+w]
+    # region1 = l_right_bottom[y:y+h, x:x+w]
     region1 = l_left_top[y:y+h, x:x+w] * angle_region1
     region1 += l_right_bottom[y:y+h, x:x+w] * (1 - angle_region1)
     chunk[y:y+h, x:x+w] = region1
     # region 2 mixed (left, bottom)
-    x, y, w, h = 0, height//2, width//2, height//2
+    x, y, w, h = 0, h0//2, w0//2, h0//2
+    # region2 = l_left_top[y:y+h, x:x+w]
+    # region2 = l_right_bottom[y:y+h, x:x+w]
     region2 = l_left_top[y:y+h, x:x+w] * angle_region2
     region2 += l_right_bottom[y:y+h, x:x+w] * (1 - angle_region2)
     chunk[y:y+h, x:x+w] = region2
     # region 3 (right, bottom)
-    x, y, w, h = width//2, height//2, width//2, height//2
+    x, y, w, h = w0//2, h0//2, w0//2, h0//2
     region3 = l_right_bottom[y:y+h, x:x+w]
     chunk[y:y+h, x:x+w] = region3
-
-    # normalize
-    if (np.min(chunk) != np.max(chunk)):
-        chunk -= np.min(chunk)
-        chunk /= np.max(chunk)
     return chunk
 
 # x-axis: 0, y-axis: 1, 45 degree: 0.5
@@ -259,22 +303,44 @@ def create_angle_array(n):
     values = (angles / (np.pi / 2))
     return values
 
-def merge_bridge(b_left, b_middle, b_right):
+def merge_bridge(bl, bm, br, shift, debug=False):
+    b_left, b_middle, b_right = bl.copy(), bm.copy(), br.copy()
+
     height, width_bl = b_left.shape
     height, width_bm = b_middle.shape
     height, width_br = b_right.shape
     chunk = np.zeros((height, width_bl + width_br))
 
+    if debug:
+        x, y, w, h = 0, 0, width_bl, height
+        chunk[y:y+h, x:x+w] = b_left
+        x, y, w, h = width_bl, 0, width_br, height
+        chunk[y:y+h, x:x+w] = b_right
+        x, y, w, h = shift, 0, width_bm, height
+        chunk[y:y+h, x:x+w] = b_middle
+        return chunk
+
     # left
     x, y, w, h = 0, 0, width_bl, height
-    b_left += b_middle[:, 0:1] - b_left[:, -width_bm//2-1:-width_bm//2]
-    chunk[y:y+h, x:x+w] = b_left
+    m_edge = b_middle[:, 0:1]
+    l_edge = b_left[:, shift:shift+1]
+    a, b = scale_shift(l_edge, m_edge)
+    b_left = a * b_left + b
+    l_edge = b_left[:, shift:shift+1]
+    chunk[y:y+h, x:x+w] = b_left + (m_edge - l_edge)
+
     # right
     x, y, w, h = width_bl, 0, width_br, height
-    b_right += b_middle[:, -2:-1] - b_right[:, width_bm//2-1:width_bm//2]
-    chunk[y:y+h, x:x+w] = b_right
+    sh = shift + width_bm - width_bl - 1
+    m_edge = b_middle[:, -1:]
+    r_edge = b_right[:, sh:sh+1]
+    a, b = scale_shift(r_edge, m_edge)
+    b_right = a * b_right + b
+    r_edge = b_right[:, sh:sh+1]
+    chunk[y:y+h, x:x+w] = b_right + (m_edge - r_edge)
+
     # middle
-    x, y, w, h = width_bl - width_bm//2, 0, width_bm, height
+    x, y, w, h = shift, 0, width_bm, height
     chunk[y:y+h, x:x+w] = b_middle
     return chunk
 
@@ -283,94 +349,152 @@ def merge_window(window_o, window_p):
     chunk_hh = np.zeros((chunk*2, chunk*2))
     chunk_vv = np.zeros((chunk*2, chunk*2))
 
+    debug_0 = np.zeros((chunk*2, chunk*2))
+    debug_1 = np.zeros((chunk*2, chunk*2))
+    debug_2 = np.zeros((chunk*2, chunk*2))
+    debug_3 = np.zeros((chunk*2, chunk*2))
+
     x, y, w, h = chunk//2, 0, chunk, chunk
     chunk_v = window_o[y:y+h, x:x+w].copy()
     chunk_h = window_p[y:y+h, x:x+w].copy()
-    b_middle = merge_chunk(chunk_v, chunk_h)
+    b_middle = merge_chunk(chunk_h, chunk_v)
 
     x, y, w, h = 0, 0, chunk, chunk
     b_left = window_o[y:y+h, x:x+w].copy()
     x, y, w, h = chunk, 0, chunk, chunk
     b_right = window_o[y:y+h, x:x+w].copy()
 
-    x, y, w, h = 0, 0, chunk*2, chunk
-    chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
+    x, y, w, h, shift = 0, 0, chunk*2, chunk, chunk//2
+    chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
+    debug_0[y:y+h, x:x+w] = chunk_hh[y:y+h, x:x+w]
+    normalize(debug_0[y:y+h, x:x+w])
+    debug_2[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
+    debug_3[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
 
     x, y, w, h = chunk//2, chunk, chunk, chunk
     chunk_v = window_o[y:y+h, x:x+w].copy()
     chunk_h = window_p[y:y+h, x:x+w].copy()
-    b_middle = merge_chunk(chunk_v, chunk_h)
+    b_middle = merge_chunk(chunk_h, chunk_v)
 
     x, y, w, h = 0, chunk, chunk, chunk
     b_left = window_o[y:y+h, x:x+w].copy()
     x, y, w, h = chunk, chunk, chunk, chunk
     b_right = window_o[y:y+h, x:x+w].copy()
 
-    x, y, w, h = 0, chunk, chunk*2, chunk
-    chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right)
+    x, y, w, h, shift = 0, chunk, chunk*2, chunk, chunk//2
+    chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
+    debug_0[y:y+h, x:x+w] = chunk_hh[y:y+h, x:x+w]
+    normalize(debug_0[y:y+h, x:x+w])
+    debug_2[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
+    debug_3[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
 
     x, y, w, h = 0, chunk//2, chunk, chunk
     chunk_v = window_p[y:y+h, x:x+w].copy()
     chunk_h = window_o[y:y+h, x:x+w].copy()
-    b_middle = merge_chunk(chunk_v, chunk_h)
+    b_middle = merge_chunk(chunk_h, chunk_v)
 
     x, y, w, h = 0, 0, chunk, chunk
     b_left = window_o[y:y+h, x:x+w].copy()
     x, y, w, h = 0, chunk, chunk, chunk
     b_right = window_o[y:y+h, x:x+w].copy()
 
-    x, y, w, h = 0, 0, chunk, chunk*2
-    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
+    x, y, w, h, shift = 0, 0, chunk, chunk*2, chunk//2
+    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
+    debug_1[y:y+h, x:x+w] = chunk_vv[y:y+h, x:x+w]
+    normalize(debug_1[y:y+h, x:x+w])
 
     x, y, w, h = chunk, chunk//2, chunk, chunk
     chunk_v = window_p[y:y+h, x:x+w].copy()
     chunk_h = window_o[y:y+h, x:x+w].copy()
-    b_middle = merge_chunk(chunk_v, chunk_h)
+    b_middle = merge_chunk(chunk_h, chunk_v)
 
     x, y, w, h = chunk, 0, chunk, chunk
     b_left = window_o[y:y+h, x:x+w].copy()
     x, y, w, h = chunk, chunk, chunk, chunk
     b_right = window_o[y:y+h, x:x+w].copy()
 
-    x, y, w, h = chunk, 0, chunk, chunk*2
-    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T).T
-    return merge_chunk(chunk_vv, chunk_hh)
+    x, y, w, h, shift = chunk, 0, chunk, chunk*2, chunk//2
+    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
+    debug_1[y:y+h, x:x+w] = chunk_vv[y:y+h, x:x+w]
+    normalize(debug_1[y:y+h, x:x+w])
 
-def merge_level(image_o, image_p, n):
+    return merge_chunk(chunk_hh, chunk_vv), [debug_0, debug_1, debug_2, debug_3]
+
+def normalize(chunk):
+    chunk -= np.min(chunk)
+    chunk /= np.max(chunk)
+    return chunk
+
+def normalize_chunk(image, n, mode='o'):
+    height, width = image.shape
+    chunk = width // n
+
+    if mode == 'o':
+        for i in range(n):
+            for j in range(n):
+                x, y, w, h = i*chunk, j*chunk, chunk, chunk
+                image[y:y+h, x:x+w] = normalize(image[y:y+h, x:x+w])
+    else:
+        for i in range(n+1):
+            for j in range(n+1):
+                w, h = chunk, chunk
+                x, y = w*i - w//2, h*j - h//2
+
+                if (i == 0): x = 0
+                if (j == 0): y = 0
+                if (i == 0 or i == n): w = chunk//2
+                if (j == 0 or j == n): h = chunk//2
+                image[y:y+h, x:x+w] = normalize(image[y:y+h, x:x+w])
+
+def merge_level(image_o, image_p, split, debug_list=None):
     image_oo = image_o.copy()
-    image_pp = image_o.copy()
+    image_pp = image_p.copy()
     size = image_o.shape[0]
+    n = split // 2
     chunk = size//n
 
     for i in range(n):
         for j in range(n):
             x, y, w, h = i*chunk, j*chunk, chunk, chunk
-            image_oo[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+            image_oo[y:y+h, x:x+w], debug_chunk_list = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+
+            if debug_list:
+                for d, image in enumerate(debug_chunk_list):
+                    debug_list[d][y:y+h, x:x+w] = image
+
+    x, y, w, h = 0, 0, chunk, chunk
+    image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+    x, y, w, h = size-chunk, 0, chunk, chunk
+    image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+    x, y, w, h = 0, size-chunk, chunk, chunk
+    image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+    x, y, w, h = size-chunk, size-chunk, chunk, chunk
+    image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
     for i in range(n-1):
-        x, y, w, h = (i+1)*chunk//2, 0, chunk, chunk
-        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
-        x, y, w, h = (i+1)*chunk//2, size-chunk, chunk, chunk
-        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
-        x, y, w, h = 0, (i+1)*chunk//2, chunk, chunk
-        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
-        x, y, w, h = size-chunk, (i+1)*chunk//2, chunk, chunk
-        image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = (2*i+1)*chunk//2, 0, chunk, chunk
+        image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = (2*i+1)*chunk//2, size-chunk, chunk, chunk
+        image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = 0, (2*i+1)*chunk//2, chunk, chunk
+        image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+        x, y, w, h = size-chunk, (2*i+1)*chunk//2, chunk, chunk
+        image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
     for i in range(n-1):
         for j in range(n-1):
-            x, y, w, h = (i+1)*chunk//2, (j+1)*chunk//2, chunk, chunk
-            image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+            x, y, w, h = (2*i+1)*chunk//2, (2*j+1)*chunk//2, chunk, chunk
+            image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
     return image_oo, image_pp
 
 def merge_split(image_o, image_p, split):
     image_oo = image_o.copy()
-    image_pp = image_o.copy()
+    image_pp = image_p.copy()
 
     while split > 1:
-        split = split // 2
         image_oo, image_pp = merge_level(image_oo, image_pp, split)
+        split = split // 2
 
     return image_oo, image_pp
 
@@ -392,12 +516,8 @@ def main():
     num_threads = args.num_threads
 
     level = 3
-    num_plot = 7
     decimation = 2**level
     umb = np.array([3900, 2304]) // decimation
-    z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
-    z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
-    z_scroll_v = zarr.open('./evol1/scroll_v.zarr/', mode='a')
 
     # x0, y0, n, chunk = 8*12, 10*12, 4, 50
     # x0, y0, n, chunk = 8*12, 10*12, 16, 12
@@ -405,12 +525,14 @@ def main():
     # x0, y0, n, chunk = 4*12, 10*12, 32, 12
     # x0, y0, n, chunk = 4*12, 10*12, 64, 6
 
-    n, chunk = 8, 12
+    # n, chunk = 64, 30
+    n, chunk = 4, 30
+    # n, chunk = 8, 12
     # n, chunk = 32, 12
     w0, h0 = chunk*n, chunk*n
-    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2
+    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n
+    # x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2
 
-    image = z_scroll[level][0, y0:y0+h0, x0:x0+w0]
     image_uo = createThetaArray(umb, x0, y0, w0, h0)
     image_vo = createRadiusArray(umb, x0, y0, w0, h0)
     image_up = image_uo.copy()
@@ -419,16 +541,18 @@ def main():
     theta = image_uo.copy()
 
     print('Compute Eigens ...')
-    image = image.astype(np.float32) / 65535.
-    st = ST(image)
-    st.computeEigens()
+    st = Struct()
+    st.vector_u = np.zeros((h0, w0, 2), dtype=np.float32)
+    st.vector_v = np.zeros((h0, w0, 2), dtype=np.float32)
+    st.coherence = np.zeros((h0, w0), dtype=np.float32)
 
     m = n
     for i in range(m):
         for j in range(m):
             w, h = chunk, chunk
-            cx, cy = chunk*n//2, chunk*n//2
-            x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2
+            cx, cy = chunk*n//2, chunk*n
+            x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m
+            # x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2
 
             uvec = np.array([x+chunk//2-cx, y+chunk//2-cy])
             norm = np.linalg.norm(uvec)
@@ -507,97 +631,81 @@ def main():
     #         x, y = w*i + cx - w*3//2, h*j + cy - h*3//2
 
     #         image_up[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
-    image_uo = theta.copy()
-    image_up = theta.copy()
-    image_vo = radius.copy()
-    image_vp = radius.copy()
 
-    plt.figure(figsize=(13, 4))
-    colormap = cmap.Colormap("tab20", interpolation="nearest")
+    # 1. 想一下要怎麼有系統的測試問題的每個環節
+    # 2. vo 為原始 radius 時正常嗎？尺度縮小時會不會發散？ (solved)
+    # 3. vo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？
+    # 4. vo 為原始卷軸資料時，能跑回原本的結果嗎？
+    # 5. uo 為原始 theta 時正常嗎？
+    # 6. uo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？
+    # 7. uo 跑看看原始卷軸資料，有問題嗎？
+    # 8. 上面都正常後，才能思考 theta 的合併問題...
 
-    plt.subplot(1, num_plot, 1)
-    plt.imshow(image, cmap='gray', aspect='equal')
-    plt.axis('off')
+    # image_uo = theta.copy()
+    # image_up = theta.copy()
+    # image_vo = radius.copy()
+    # image_vp = radius.copy()
 
-    plt.subplot(1, num_plot, 2)
-    plt.imshow(colormap(image_uo), aspect='equal')
-    plt.axis('off')
+    image_vo_original = image_vo.copy()
+    image_vp_original = image_vp.copy()
 
-    plt.subplot(1, num_plot, 3)
-    plt.imshow(colormap(image_up), aspect='equal')
-    plt.axis('off')
-
-    plt.subplot(1, num_plot, 4)
-    plt.imshow(colormap(image_vo), aspect='equal')
-    plt.axis('off')
-
-    plt.subplot(1, num_plot, 5)
-    plt.imshow(colormap(image_vp), aspect='equal')
-    plt.axis('off')
+    debug_list = []
+    for i in range(4): debug_list.append(np.zeros_like(image_vo))
 
     print('merge image_vo & image_vp')
-    # split = n
-    # image_vo = merge_split(image_vo, image_vp, split)
-
     split = n
-    aa, _ = merge_split(image_vo, image_vp, split)
+    # image_vo, image_vp = merge_level(image_vo, image_vp, split)
+    image_vo, image_vp = merge_level(image_vo, image_vp, split, debug_list)
 
-    bb, _ = merge_split(image_vo[::-1, :].T, image_vp[::-1, :].T, split)
-    bb = bb.T[::-1, :]
+    normalize_chunk(image_vo, n//2, 'o')
+    normalize_chunk(image_vp, n//2, 'p')
 
-    image_vo = (aa + bb) / 2
+    row_num, col_num = 2, 4
+    fig, axes = plt.subplots(row_num, col_num, figsize=(13, 4))
+    colormap = cmap.Colormap("tab20", interpolation="nearest")
 
-    print('merge image_uo & image_up')
-    # split = n // 2
-    # x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
-    # image_uo[y:y+h, x:x+w], _ = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    row, col = 0, 0
+    axes[row, col].imshow(colormap(image_vo), aspect='equal')
+    axes[row, col].set_title('image_vo_final')
+    axes[row, col].axis('off')
 
-    split = n // 2
-    x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
-    aa, _ = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    row, col = 1, 0
+    axes[row, col].imshow(colormap(image_vp), aspect='equal')
+    axes[row, col].set_title('image_vp_final')
+    axes[row, col].axis('off')
 
-    split = n // 2
-    x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
-    bb, _ = merge_split(image_uo[y:y+h, x:x+w][::-1, :].T, image_up[y:y+h, x:x+w][::-1, :].T, split)
-    bb = bb.T[::-1, :]
+    row, col = 0, 1
+    axes[row, col].imshow(colormap(image_vo_original), aspect='equal')
+    axes[row, col].set_title('image_vo_original')
+    axes[row, col].axis('off')
 
-    image_uo[y:y+h, x:x+w] = (aa + bb) / 2
+    row, col = 1, 1
+    axes[row, col].imshow(colormap(image_vp_original), aspect='equal')
+    axes[row, col].set_title('image_vp_original')
+    axes[row, col].axis('off')
 
-    # split = n // 4
-    # x, y, w, h = chunk*n//4, 0, chunk*n//4, chunk*n//4
-    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    row, col = 0, 2
+    axes[row, col].imshow(colormap(debug_list[0]), aspect='equal')
+    axes[row, col].set_title('debug_0')
+    axes[row, col].axis('off')
 
-    # split = n // 4
-    # x, y, w, h = chunk*n//4, chunk*n//4, chunk*n//4, chunk*n//4
-    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    row, col = 0, 3
+    axes[row, col].imshow(colormap(debug_list[1]), aspect='equal')
+    axes[row, col].set_title('debug_1')
+    axes[row, col].axis('off')
 
-    # split = n // 4
-    # x, y, w, h = chunk*n//2, 0, chunk*n//4, chunk*n//4
-    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    row, col = 1, 2
+    axes[row, col].imshow(colormap(debug_list[2]), aspect='equal')
+    axes[row, col].set_title('debug_2')
+    axes[row, col].axis('off')
 
-    # split = n // 4
-    # x, y, w, h = chunk*n//2, chunk*n//4, chunk*n//4, chunk*n//4
-    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], split)
+    row, col = 1, 3
+    axes[row, col].imshow(colormap(debug_list[3]), aspect='equal')
+    axes[row, col].set_title('debug_3')
+    axes[row, col].axis('off')
 
-    # x, y, w, h = chunk*n//4, 0, chunk*n//2, chunk*n//2
-    # image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w] = merge_split(image_uo[y:y+h, x:x+w], image_up[y:y+h, x:x+w], 1)
-
-    # x, y, w, h = chunk*n//2 - chunk*n//16, chunk*n//2 - chunk*n//16, chunk*n//8, chunk*n//8
-    # image_uo[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
-
-    plt.subplot(1, num_plot, 6)
-    plt.imshow(colormap(image_uo), aspect='equal')
-    plt.axis('off')
-
-    plt.subplot(1, num_plot, 7)
-    plt.imshow(colormap(image_vo), aspect='equal')
-    plt.axis('off')
-
+    plt.tight_layout()
     plt.show()
-
-    # # save u, v result
-    # z_scroll_u[level][0, y0:y0+h0, x0:x0+w0] = (image_uo * 65535).astype(np.uint16)
-    # z_scroll_v[level][0, y0:y0+h0, x0:x0+w0] = (image_vo * 65535).astype(np.uint16)
 
 if __name__ == '__main__':
     sys.exit(main())

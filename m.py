@@ -42,7 +42,8 @@ def scale_shift(x, y):
         b = (ymax + ymin) / 2 - (xmax + xmin) / 2
     return a, b
 
-def merge_chunk(chunk_v, chunk_h):
+def merge_chunk(image_v, image_h):
+    chunk_v, chunk_h = image_v.copy(), image_h.copy()
     height, width = chunk_v.shape
 
     # vertical rectangle (left)
@@ -236,7 +237,7 @@ def merge_window(window_o, window_p):
     b_right = window_o[y:y+h, x:x+w].copy()
 
     x, y, w, h, shift = 0, 0, chunk, chunk*2, chunk//2
-    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, chunk//2).T
+    chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
 
     x, y, w, h = chunk, chunk//2, chunk, chunk
     chunk_v = window_p[y:y+h, x:x+w].copy()
@@ -250,6 +251,7 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = chunk, 0, chunk, chunk*2, chunk//2
     chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
+    # return chunk_vv
     return merge_chunk(chunk_vv, chunk_hh)
 
 def merge_level(image_o, image_p, n):
@@ -264,19 +266,29 @@ def merge_level(image_o, image_p, n):
             image_oo[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
     for i in range(n-1):
-        x, y, w, h = (i+1)*chunk//2, 0, chunk, chunk
+        x, y, w, h = (2*i+1)*chunk//2, 0, chunk, chunk
         image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
-        x, y, w, h = (i+1)*chunk//2, size-chunk, chunk, chunk
+        x, y, w, h = (2*i+1)*chunk//2, size-chunk, chunk, chunk
         image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
-        x, y, w, h = 0, (i+1)*chunk//2, chunk, chunk
+        x, y, w, h = 0, (2*i+1)*chunk//2, chunk, chunk
         image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
-        x, y, w, h = size-chunk, (i+1)*chunk//2, chunk, chunk
+        x, y, w, h = size-chunk, (2*i+1)*chunk//2, chunk, chunk
         image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
     for i in range(n-1):
         for j in range(n-1):
-            x, y, w, h = (i+1)*chunk//2, (j+1)*chunk//2, chunk, chunk
+            x, y, w, h = (2*i+1)*chunk//2, (2*j+1)*chunk//2, chunk, chunk
             image_pp[y:y+h, x:x+w] = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+
+    return image_oo, image_pp
+
+def merge_split(image_o, image_p, split):
+    image_oo = image_o.copy()
+    image_pp = image_o.copy()
+
+    while split > 1:
+        split = split // 2
+        image_oo, image_pp = merge_level(image_oo, image_pp, split)
 
     return image_oo, image_pp
 
@@ -302,99 +314,99 @@ def main():
     plt.imshow(colormap(image_uo), aspect='equal')
     plt.axis('off')
 
-    # x, y, w, h = w0//4, 0, w0//4, h0//4
-    # b_left = image_uo[y:y+h, x:x+w].copy()
-    # x, y, w, h = 3*w0//8, 0, w0//4, h0//4
-    # b_middle = image_uo[y:y+h, x:x+w].copy()
-    # x, y, w, h = w0//2, 0, w0//4, h0//4
-    # b_right = image_uo[y:y+h, x:x+w].copy()
-    # x, y, w, h, shift = w0//4, 0, w0//2, h0//4, 3*w0//8-w0//4
-    # image_uo[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
+    # shx, shy = w0//6, w0//6
 
-    shx, shy = w0//6, w0//6
+    # # vertical rectangle (left)
+    # x, y, w, h = shx+0, shy+0, w0//4, h0//2
+    # rect_v = image_uo[y:y+h, x:x+w].copy()
+    # rect_v -= np.min(rect_v)
+    # rect_v /= np.max(rect_v)
+    # # horizontal rectangle (top)
+    # x, y, w, h = shx+0, shy+0, w0//2, h0//4
+    # rect_h = image_uo[y:y+h, x:x+w].copy()
+    # rect_h -= np.min(rect_h)
+    # rect_h /= np.max(rect_h)
+    # # merge the cross region
+    # l_left_top = merge_rectangle(rect_v, rect_h)
+    # # x, y, w, h = sh+0, 0, w0//2, h0//2
+    # # image_uo[y:y+h, x:x+w] = l_left_top
 
-    # vertical rectangle (left)
-    x, y, w, h = shx+0, shy+0, w0//4, h0//2
-    rect_v = image_uo[y:y+h, x:x+w].copy()
-    rect_v -= np.min(rect_v)
-    rect_v /= np.max(rect_v)
-    # horizontal rectangle (top)
-    x, y, w, h = shx+0, shy+0, w0//2, h0//4
-    rect_h = image_uo[y:y+h, x:x+w].copy()
-    rect_h -= np.min(rect_h)
-    rect_h /= np.max(rect_h)
-    # merge the cross region
-    l_left_top = merge_rectangle(rect_v, rect_h)
-    # x, y, w, h = sh+0, 0, w0//2, h0//2
-    # image_uo[y:y+h, x:x+w] = l_left_top
+    # # vertical rectangle (right)
+    # x, y, w, h = shx+w0//4, shy+0, w0//4, h0//2
+    # rect_v = image_uo[y:y+h, x:x+w].copy()
+    # rect_v -= np.min(rect_v)
+    # rect_v /= np.max(rect_v)
+    # # horizontal rectangle (bottom)
+    # x, y, w, h = shx+0, shy+h0//4, w0//2, h0//4
+    # rect_h = image_uo[y:y+h, x:x+w].copy()
+    # rect_h -= np.min(rect_h)
+    # rect_h /= np.max(rect_h)
+    # # merge the cross region (reversed)
+    # l_right_bottom = merge_rectangle(rect_v[::-1, ::-1], rect_h[::-1, ::-1])
+    # l_right_bottom = l_right_bottom[::-1, ::-1]
+    # # x, y, w, h = sh+0, 0, w0//2, h0//2
+    # # a = np.max(image_uo[y:y+h, x:x+w])
+    # # image_uo[y:y+h, x:x+w] = l_right_bottom
+    # # image_uo[y:y+h, x:x+w] *= a
 
-    # vertical rectangle (right)
-    x, y, w, h = shx+w0//4, shy+0, w0//4, h0//2
-    rect_v = image_uo[y:y+h, x:x+w].copy()
-    rect_v -= np.min(rect_v)
-    rect_v /= np.max(rect_v)
-    # horizontal rectangle (bottom)
-    x, y, w, h = shx+0, shy+h0//4, w0//2, h0//4
-    rect_h = image_uo[y:y+h, x:x+w].copy()
-    rect_h -= np.min(rect_h)
-    rect_h /= np.max(rect_h)
-    # merge the cross region (reversed)
-    l_right_bottom = merge_rectangle(rect_v[::-1, ::-1], rect_h[::-1, ::-1])
-    l_right_bottom = l_right_bottom[::-1, ::-1]
-    # x, y, w, h = sh+0, 0, w0//2, h0//2
+    # x, y, w, h = shx+0, shy+0, w0//2, h0//2
     # a = np.max(image_uo[y:y+h, x:x+w])
-    # image_uo[y:y+h, x:x+w] = l_right_bottom
-    # image_uo[y:y+h, x:x+w] *= a
+    # b = np.min(image_uo[y:y+h, x:x+w])
+    # image_uo[y:y+h, x:x+w] = merge_Lshape(l_left_top, l_right_bottom)
+    # image_uo[y:y+h, x:x+w] -= b
+    # image_uo[y:y+h, x:x+w] *= (a-b)
 
-    x, y, w, h = shx+0, shy+0, w0//2, h0//2
-    a = np.max(image_uo[y:y+h, x:x+w])
-    b = np.min(image_uo[y:y+h, x:x+w])
-    image_uo[y:y+h, x:x+w] = merge_Lshape(l_left_top, l_right_bottom)
-    image_uo[y:y+h, x:x+w] -= b
-    image_uo[y:y+h, x:x+w] *= (a-b)
+    # x, y, w, h = shx+0, shy+0, w0//2, h0//2
+    # chunk_v = image_uo[y:y+h, x:x+w].copy()
+    # x, y, w, h = shx+0, shy+0, w0//4, h0//2
+    # chunk_v[:h, :w] = image_uo[y:y+h, x:x+w].copy()
+    # chunk_v[:h, :w] -= np.min(chunk_v[y:y+h, x:x+w])
+    # chunk_v[:h, :w] /= np.max(chunk_v[y:y+h, x:x+w])
+    # x, y, w, h = shx+w0//4, shy+0, w0//4, h0//2
+    # chunk_v[:h, w:w+w] = image_uo[y:y+h, x:x+w].copy()
+    # chunk_v[:h, w:w+w] -= np.min(chunk_v[y:y+h, x:x+w])
+    # chunk_v[:h, w:w+w] /= np.max(chunk_v[y:y+h, x:x+w])
+    # # x, y, w, h = shx+0, shy+0, w0//2, h0//2
+    # # image_uo[y:y+h, x:x+w] = chunk_v
 
-    # x, y, w, h = w0//5, 0, w0//2, h0//2
-    # l_left_top = image_uo[y:y+h, x:x+w]
-    # x, y, w, h = w0//5, 0, w0//2, h0//2
-    # l_right_bottom = image_uo[y:y+h, x:x+w]
-    # x, y, w, h = w0//5, 0, w0//2, h0//2
+    # x, y, w, h = shx+0, shy+0, w0//2, h0//2
+    # chunk_h = image_uo[y:y+h, x:x+w].copy()
+    # x, y, w, h = shx+0, shy+0, w0//2, h0//4
+    # chunk_h[:h, :w] = image_uo[y:y+h, x:x+w].copy()
+    # chunk_h[:h, :w] -= np.min(chunk_v[y:y+h, x:x+w])
+    # chunk_h[:h, :w] /= np.max(chunk_v[y:y+h, x:x+w])
+    # x, y, w, h = shx+0, shy+h0//4, w0//2, h0//4
+    # chunk_h[h:h+h, :w] = image_uo[y:y+h, x:x+w].copy()
+    # chunk_h[h:h+h, :w] -= np.min(chunk_v[y:y+h, x:x+w])
+    # chunk_h[h:h+h, :w] /= np.max(chunk_v[y:y+h, x:x+w])
+    # # x, y, w, h = shx+0, shy+0, w0//2, h0//2
+    # # image_uo[y:y+h, x:x+w] = chunk_h
+
+    # x, y, w, h = shx, shy, w0//2, h0//2
     # a = np.max(image_uo[y:y+h, x:x+w])
-    # image_uo[y:y+h, x:x+w] = merge_chunk(l_left_top, l_right_bottom)
-    # image_uo[y:y+h, x:x+w] *= a
+    # b = np.min(image_uo[y:y+h, x:x+w])
+    # image_uo[y:y+h, x:x+w] = merge_chunk(chunk_v, chunk_h)
+    # # image_uo[y:y+h, x:x+w] -= b
+    # # image_uo[y:y+h, x:x+w] *= (a-b)
 
     # merge_bridge (correct)
     # merge_rectangle (correct)
     # merge_Lshape (correct)
+    # merge_chunk (correct)
+
+    split = 8
+    split = split // 2
+    image_vo, image_vp = merge_level(image_vo, image_vp, split)
 
     plt.subplot(1, num_plot, 3)
-    plt.imshow(colormap(image_vo), aspect='equal')
+    plt.imshow(colormap(image_io), aspect='equal')
     plt.axis('off')
 
     plt.subplot(1, num_plot, 4)
-    plt.imshow(colormap(image_uo), aspect='equal')
+    plt.imshow(colormap(image_vp), aspect='equal')
     plt.axis('off')
 
     plt.show()
 
 if __name__ == '__main__':
     sys.exit(main())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
