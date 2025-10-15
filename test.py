@@ -348,11 +348,7 @@ def merge_window(window_o, window_p):
     chunk = window_o.shape[0] // 2
     chunk_hh = np.zeros((chunk*2, chunk*2))
     chunk_vv = np.zeros((chunk*2, chunk*2))
-
-    debug_0 = np.zeros((chunk*2, chunk*2))
-    debug_1 = np.zeros((chunk*2, chunk*2))
-    debug_2 = np.zeros((chunk*2, chunk*2))
-    debug_3 = np.zeros((chunk*2, chunk*2))
+    debug_list = [np.zeros((chunk*2, chunk*2)) for _ in range(12)]
 
     x, y, w, h = chunk//2, 0, chunk, chunk
     chunk_v = window_o[y:y+h, x:x+w].copy()
@@ -366,10 +362,14 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = 0, 0, chunk*2, chunk, chunk//2
     chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
-    debug_0[y:y+h, x:x+w] = chunk_hh[y:y+h, x:x+w]
-    normalize(debug_0[y:y+h, x:x+w])
-    debug_2[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
-    debug_3[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    debug_list[11][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 0), b_right, shift, True)
+    debug_list[10][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 1), b_right, shift, True)
+    debug_list[9][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
+    debug_list[8][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    normalize(debug_list[11][y:y+h, x:x+w])
+    normalize(debug_list[10][y:y+h, x:x+w])
+    normalize(debug_list[9][y:y+h, x:x+w])
+    normalize(debug_list[8][y:y+h, x:x+w])
 
     x, y, w, h = chunk//2, chunk, chunk, chunk
     chunk_v = window_o[y:y+h, x:x+w].copy()
@@ -383,10 +383,14 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = 0, chunk, chunk*2, chunk, chunk//2
     chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
-    debug_0[y:y+h, x:x+w] = chunk_hh[y:y+h, x:x+w]
-    normalize(debug_0[y:y+h, x:x+w])
-    debug_2[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
-    debug_3[y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    debug_list[11][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 0), b_right, shift, True)
+    debug_list[10][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 1), b_right, shift, True)
+    debug_list[9][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
+    debug_list[8][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    normalize(debug_list[11][y:y+h, x:x+w])
+    normalize(debug_list[10][y:y+h, x:x+w])
+    normalize(debug_list[9][y:y+h, x:x+w])
+    normalize(debug_list[8][y:y+h, x:x+w])
 
     x, y, w, h = 0, chunk//2, chunk, chunk
     chunk_v = window_p[y:y+h, x:x+w].copy()
@@ -400,8 +404,14 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = 0, 0, chunk, chunk*2, chunk//2
     chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
-    debug_1[y:y+h, x:x+w] = chunk_vv[y:y+h, x:x+w]
-    normalize(debug_1[y:y+h, x:x+w])
+    debug_list[7][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 0).T, b_right.T, shift, True).T
+    debug_list[6][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 1).T, b_right.T, shift, True).T
+    debug_list[5][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 2).T, b_right.T, shift, True).T
+    debug_list[4][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 3).T, b_right.T, shift, True).T
+    normalize(debug_list[7][y:y+h, x:x+w])
+    normalize(debug_list[6][y:y+h, x:x+w])
+    normalize(debug_list[5][y:y+h, x:x+w])
+    normalize(debug_list[4][y:y+h, x:x+w])
 
     x, y, w, h = chunk, chunk//2, chunk, chunk
     chunk_v = window_p[y:y+h, x:x+w].copy()
@@ -415,10 +425,26 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = chunk, 0, chunk, chunk*2, chunk//2
     chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
-    debug_1[y:y+h, x:x+w] = chunk_vv[y:y+h, x:x+w]
-    normalize(debug_1[y:y+h, x:x+w])
+    debug_list[7][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 0).T, b_right.T, shift, True).T
+    debug_list[6][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 1).T, b_right.T, shift, True).T
+    debug_list[5][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 2).T, b_right.T, shift, True).T
+    debug_list[4][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 3).T, b_right.T, shift, True).T
+    normalize(debug_list[7][y:y+h, x:x+w])
+    normalize(debug_list[6][y:y+h, x:x+w])
+    normalize(debug_list[5][y:y+h, x:x+w])
+    normalize(debug_list[4][y:y+h, x:x+w])
 
-    return merge_chunk(chunk_hh, chunk_vv), [debug_0, debug_1, debug_2, debug_3]
+    final_chunk = merge_chunk(chunk_hh, chunk_vv)
+    debug_list[3] = merge_chunk(chunk_hh, chunk_vv, True, 0)
+    debug_list[2] = merge_chunk(chunk_hh, chunk_vv, True, 1)
+    debug_list[1] = merge_chunk(chunk_hh, chunk_vv, True, 2)
+    debug_list[0] = merge_chunk(chunk_hh, chunk_vv, True, 3)
+    normalize(debug_list[3])
+    normalize(debug_list[2])
+    normalize(debug_list[1])
+    normalize(debug_list[0])
+
+    return final_chunk, debug_list
 
 def normalize(chunk):
     chunk -= np.min(chunk)
@@ -446,21 +472,25 @@ def normalize_chunk(image, n, mode='o'):
                 if (j == 0 or j == n): h = chunk//2
                 image[y:y+h, x:x+w] = normalize(image[y:y+h, x:x+w])
 
-def merge_level(image_o, image_p, split, debug_list=None):
+def merge_level(image_o, image_p, split):
     image_oo = image_o.copy()
     image_pp = image_p.copy()
     size = image_o.shape[0]
     n = split // 2
     chunk = size//n
 
+    debug_list = []
+
     for i in range(n):
         for j in range(n):
             x, y, w, h = i*chunk, j*chunk, chunk, chunk
             image_oo[y:y+h, x:x+w], debug_chunk_list = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
-            if debug_list:
-                for d, image in enumerate(debug_chunk_list):
-                    debug_list[d][y:y+h, x:x+w] = image
+            if not debug_list:
+                for _ in debug_chunk_list:
+                    debug_list.append(np.zeros_like(image_o))
+            for d, image in enumerate(debug_chunk_list):
+                debug_list[d][y:y+h, x:x+w] = image
 
     x, y, w, h = 0, 0, chunk, chunk
     image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
@@ -486,7 +516,7 @@ def merge_level(image_o, image_p, split, debug_list=None):
             x, y, w, h = (2*i+1)*chunk//2, (2*j+1)*chunk//2, chunk, chunk
             image_pp[y:y+h, x:x+w], _ = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
 
-    return image_oo, image_pp
+    return image_oo, image_pp, debug_list
 
 def merge_split(image_o, image_p, split):
     image_oo = image_o.copy()
@@ -649,60 +679,55 @@ def main():
     image_vo_original = image_vo.copy()
     image_vp_original = image_vp.copy()
 
-    debug_list = []
-    for i in range(4): debug_list.append(np.zeros_like(image_vo))
 
     print('merge image_vo & image_vp')
     split = n
     # image_vo, image_vp = merge_level(image_vo, image_vp, split)
-    image_vo, image_vp = merge_level(image_vo, image_vp, split, debug_list)
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
 
     normalize_chunk(image_vo, n//2, 'o')
     normalize_chunk(image_vp, n//2, 'p')
 
-    row_num, col_num = 2, 4
-    fig, axes = plt.subplots(row_num, col_num, figsize=(13, 4))
+    row_num, col_num = 2, 7
+    fig, axes = plt.subplots(row_num, col_num, figsize=(13, 5))
     colormap = cmap.Colormap("tab20", interpolation="nearest")
+    col_list = [0] * row_num
 
-    row, col = 0, 0
-    axes[row, col].imshow(colormap(image_vo), aspect='equal')
-    axes[row, col].set_title('image_vo_final')
-    axes[row, col].axis('off')
+    row = 1
+    axes[row, col_list[row]].imshow(colormap(image_vo_original), aspect='equal')
+    axes[row, col_list[row]].set_title('image_vo_original')
+    axes[row, col_list[row]].axis('off')
+    col_list[row] += 1
 
-    row, col = 1, 0
-    axes[row, col].imshow(colormap(image_vp), aspect='equal')
-    axes[row, col].set_title('image_vp_final')
-    axes[row, col].axis('off')
+    # row = 1
+    # axes[row, col_list[row]].imshow(colormap(image_vp_original), aspect='equal')
+    # axes[row, col_list[row]].set_title('image_vp_original')
+    # axes[row, col_list[row]].axis('off')
+    # col_list[row] += 1
 
-    row, col = 0, 1
-    axes[row, col].imshow(colormap(image_vo_original), aspect='equal')
-    axes[row, col].set_title('image_vo_original')
-    axes[row, col].axis('off')
+    row = 0
+    axes[row, col_list[row]].imshow(colormap(image_vo), aspect='equal')
+    axes[row, col_list[row]].set_title('image_vo_final')
+    axes[row, col_list[row]].axis('off')
+    col_list[row] += 1
 
-    row, col = 1, 1
-    axes[row, col].imshow(colormap(image_vp_original), aspect='equal')
-    axes[row, col].set_title('image_vp_original')
-    axes[row, col].axis('off')
+    # row = 1
+    # axes[row, col_list[row]].imshow(colormap(image_vp), aspect='equal')
+    # axes[row, col_list[row]].set_title('image_vp_final')
+    # axes[row, col_list[row]].axis('off')
+    # col_list[row] += 1
 
-    row, col = 0, 2
-    axes[row, col].imshow(colormap(debug_list[0]), aspect='equal')
-    axes[row, col].set_title('debug_0')
-    axes[row, col].axis('off')
+    debug_i = 0
+    for row in range(row_num):
+        for col in range(col_num):
+            if (col < col_list[row]): continue
+            if (len(debug_list) < debug_i + 1): continue
 
-    row, col = 0, 3
-    axes[row, col].imshow(colormap(debug_list[1]), aspect='equal')
-    axes[row, col].set_title('debug_1')
-    axes[row, col].axis('off')
-
-    row, col = 1, 2
-    axes[row, col].imshow(colormap(debug_list[2]), aspect='equal')
-    axes[row, col].set_title('debug_2')
-    axes[row, col].axis('off')
-
-    row, col = 1, 3
-    axes[row, col].imshow(colormap(debug_list[3]), aspect='equal')
-    axes[row, col].set_title('debug_3')
-    axes[row, col].axis('off')
+            axes[row, col_list[row]].imshow(colormap(debug_list[debug_i]), aspect='equal')
+            axes[row, col_list[row]].set_title('debug_' + str(debug_i))
+            axes[row, col_list[row]].axis('off')
+            col_list[row] += 1
+            debug_i += 1
 
     plt.tight_layout()
     plt.show()
