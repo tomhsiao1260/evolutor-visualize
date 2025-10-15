@@ -217,14 +217,14 @@ def merge_rectangle(image_v, image_h):
     # top-right
     x, y, w, h = ws-1, 0, width-ws+1, hs
     a, b = scale_shift(rect_h[:, x:x+1], region0[:, -1:])
-    rect_h = a * rect_h + b
+    # rect_h = a * rect_h + b
     region1 = rect_h[y:y+h, x:x+w]
     region1 += region0[:, -1:] - rect_h[:, x:x+1]
     rect_m[y:y+h, x:x+w] = region1
     # bottom-left
     x, y, w, h = 0, hs-1, ws, height-hs+1
     a, b = scale_shift(rect_v[y:y+1, :], region0[-1:, :])
-    rect_v = a * rect_v + b
+    # rect_v = a * rect_v + b
     region2 = rect_v[y:y+h, x:x+w]
     region2 += region0[-1:, :] - rect_v[y:y+1, :]
     rect_m[y:y+h, x:x+w] = region2
@@ -261,15 +261,11 @@ def merge_Lshape(l_left_top, l_right_bottom):
     rb_max = max(np.max(b), np.max(d))
     rb_min = min(np.min(b), np.min(d))
     scale = (lt_max - lt_min) / (rb_max - rb_min + 1e-7)
-    l_right_bottom = l_right_bottom * scale
+    # l_right_bottom = l_right_bottom * scale
 
     angle_array = create_angle_array(h0//2)
     angle_region1 = angle_array.copy()[::-1, :]
     angle_region2 = angle_array.copy()[::-1, :].T
-    # angle_region1[angle_region1 > 0.5] = 1
-    # angle_region1[angle_region1 <= 0.5] = 0
-    # angle_region2[angle_region2 > 0.5] = 1
-    # angle_region2[angle_region2 <= 0.5] = 0
  
     # region 0 (left, top)
     x, y, w, h = 0, 0, w0//2, h0//2
@@ -277,15 +273,11 @@ def merge_Lshape(l_left_top, l_right_bottom):
     chunk[y:y+h, x:x+w] = region0
     # region 1 mixed (right, top)
     x, y, w, h = w0//2, 0, w0//2, h0//2
-    # region1 = l_left_top[y:y+h, x:x+w]
-    # region1 = l_right_bottom[y:y+h, x:x+w]
     region1 = l_left_top[y:y+h, x:x+w] * angle_region1
     region1 += l_right_bottom[y:y+h, x:x+w] * (1 - angle_region1)
     chunk[y:y+h, x:x+w] = region1
     # region 2 mixed (left, bottom)
     x, y, w, h = 0, h0//2, w0//2, h0//2
-    # region2 = l_left_top[y:y+h, x:x+w]
-    # region2 = l_right_bottom[y:y+h, x:x+w]
     region2 = l_left_top[y:y+h, x:x+w] * angle_region2
     region2 += l_right_bottom[y:y+h, x:x+w] * (1 - angle_region2)
     chunk[y:y+h, x:x+w] = region2
@@ -325,7 +317,7 @@ def merge_bridge(bl, bm, br, shift, debug=False):
     m_edge = b_middle[:, 0:1]
     l_edge = b_left[:, shift:shift+1]
     a, b = scale_shift(l_edge, m_edge)
-    b_left = a * b_left + b
+    # b_left = a * b_left + b
     l_edge = b_left[:, shift:shift+1]
     chunk[y:y+h, x:x+w] = b_left + (m_edge - l_edge)
 
@@ -335,7 +327,7 @@ def merge_bridge(bl, bm, br, shift, debug=False):
     m_edge = b_middle[:, -1:]
     r_edge = b_right[:, sh:sh+1]
     a, b = scale_shift(r_edge, m_edge)
-    b_right = a * b_right + b
+    # b_right = a * b_right + b
     r_edge = b_right[:, sh:sh+1]
     chunk[y:y+h, x:x+w] = b_right + (m_edge - r_edge)
 
@@ -348,7 +340,10 @@ def merge_window(window_o, window_p):
     chunk = window_o.shape[0] // 2
     chunk_hh = np.zeros((chunk*2, chunk*2))
     chunk_vv = np.zeros((chunk*2, chunk*2))
-    debug_list = [np.zeros((chunk*2, chunk*2)) for _ in range(12)]
+    debug_list = [np.zeros((chunk*2, chunk*2)) for _ in range(16)]
+
+    debug_list[14] = normalize(window_o.copy())
+    debug_list[15] = normalize(window_p.copy())
 
     x, y, w, h = chunk//2, 0, chunk, chunk
     chunk_v = window_o[y:y+h, x:x+w].copy()
@@ -362,14 +357,16 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = 0, 0, chunk*2, chunk, chunk//2
     chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
-    debug_list[11][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 0), b_right, shift, True)
-    debug_list[10][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 1), b_right, shift, True)
-    debug_list[9][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
-    debug_list[8][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    debug_list[13][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 0), b_right, shift, True)
+    debug_list[12][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 1), b_right, shift, True)
+    debug_list[11][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
+    debug_list[10][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    debug_list[9][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v), b_right, shift, True)
+    normalize(debug_list[13][y:y+h, x:x+w])
+    normalize(debug_list[12][y:y+h, x:x+w])
     normalize(debug_list[11][y:y+h, x:x+w])
     normalize(debug_list[10][y:y+h, x:x+w])
     normalize(debug_list[9][y:y+h, x:x+w])
-    normalize(debug_list[8][y:y+h, x:x+w])
 
     x, y, w, h = chunk//2, chunk, chunk, chunk
     chunk_v = window_o[y:y+h, x:x+w].copy()
@@ -383,14 +380,16 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = 0, chunk, chunk*2, chunk, chunk//2
     chunk_hh[y:y+h, x:x+w] = merge_bridge(b_left, b_middle, b_right, shift)
-    debug_list[11][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 0), b_right, shift, True)
-    debug_list[10][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 1), b_right, shift, True)
-    debug_list[9][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
-    debug_list[8][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    debug_list[13][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 0), b_right, shift, True)
+    debug_list[12][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 1), b_right, shift, True)
+    debug_list[11][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 2), b_right, shift, True)
+    debug_list[10][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v, True, 3), b_right, shift, True)
+    debug_list[9][y:y+h, x:x+w] = merge_bridge(b_left, merge_chunk(chunk_h, chunk_v), b_right, shift, True)
+    normalize(debug_list[13][y:y+h, x:x+w])
+    normalize(debug_list[12][y:y+h, x:x+w])
     normalize(debug_list[11][y:y+h, x:x+w])
     normalize(debug_list[10][y:y+h, x:x+w])
     normalize(debug_list[9][y:y+h, x:x+w])
-    normalize(debug_list[8][y:y+h, x:x+w])
 
     x, y, w, h = 0, chunk//2, chunk, chunk
     chunk_v = window_p[y:y+h, x:x+w].copy()
@@ -404,10 +403,12 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = 0, 0, chunk, chunk*2, chunk//2
     chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
-    debug_list[7][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 0).T, b_right.T, shift, True).T
-    debug_list[6][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 1).T, b_right.T, shift, True).T
-    debug_list[5][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 2).T, b_right.T, shift, True).T
-    debug_list[4][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 3).T, b_right.T, shift, True).T
+    debug_list[8][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 0).T, b_right.T, shift, True).T
+    debug_list[7][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 1).T, b_right.T, shift, True).T
+    debug_list[6][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 2).T, b_right.T, shift, True).T
+    debug_list[5][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 3).T, b_right.T, shift, True).T
+    debug_list[4][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v).T, b_right.T, shift, True).T
+    normalize(debug_list[8][y:y+h, x:x+w])
     normalize(debug_list[7][y:y+h, x:x+w])
     normalize(debug_list[6][y:y+h, x:x+w])
     normalize(debug_list[5][y:y+h, x:x+w])
@@ -425,10 +426,12 @@ def merge_window(window_o, window_p):
 
     x, y, w, h, shift = chunk, 0, chunk, chunk*2, chunk//2
     chunk_vv[y:y+h, x:x+w] = merge_bridge(b_left.T, b_middle.T, b_right.T, shift).T
-    debug_list[7][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 0).T, b_right.T, shift, True).T
-    debug_list[6][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 1).T, b_right.T, shift, True).T
-    debug_list[5][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 2).T, b_right.T, shift, True).T
-    debug_list[4][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 3).T, b_right.T, shift, True).T
+    debug_list[8][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 0).T, b_right.T, shift, True).T
+    debug_list[7][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 1).T, b_right.T, shift, True).T
+    debug_list[6][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 2).T, b_right.T, shift, True).T
+    debug_list[5][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v, True, 3).T, b_right.T, shift, True).T
+    debug_list[4][y:y+h, x:x+w] = merge_bridge(b_left.T, merge_chunk(chunk_h, chunk_v).T, b_right.T, shift, True).T
+    normalize(debug_list[8][y:y+h, x:x+w])
     normalize(debug_list[7][y:y+h, x:x+w])
     normalize(debug_list[6][y:y+h, x:x+w])
     normalize(debug_list[5][y:y+h, x:x+w])
@@ -556,12 +559,12 @@ def main():
     # x0, y0, n, chunk = 4*12, 10*12, 64, 6
 
     # n, chunk = 64, 30
-    n, chunk = 4, 30
+    n, chunk = 32, 10
     # n, chunk = 8, 12
     # n, chunk = 32, 12
     w0, h0 = chunk*n, chunk*n
-    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n
-    # x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2
+    # x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n
+    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2 # circle
 
     image_uo = createThetaArray(umb, x0, y0, w0, h0)
     image_vo = createRadiusArray(umb, x0, y0, w0, h0)
@@ -571,23 +574,33 @@ def main():
     theta = image_uo.copy()
 
     print('Compute Eigens ...')
-    st = Struct()
-    st.vector_u = np.zeros((h0, w0, 2), dtype=np.float32)
-    st.vector_v = np.zeros((h0, w0, 2), dtype=np.float32)
-    st.coherence = np.zeros((h0, w0), dtype=np.float32)
+    z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
+    z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
+    z_scroll_v = zarr.open('./evol1/scroll_v.zarr/', mode='a')
+    image = z_scroll[level][0, y0:y0+h0, x0:x0+w0]
 
-    m = n
-    for i in range(m):
-        for j in range(m):
-            w, h = chunk, chunk
-            cx, cy = chunk*n//2, chunk*n
-            x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m
-            # x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2
+    image = image.astype(np.float32) / 65535.
+    st = ST(image)
+    st.computeEigens()
 
-            uvec = np.array([x+chunk//2-cx, y+chunk//2-cy])
-            norm = np.linalg.norm(uvec)
-            uvec = uvec / norm
-            st.vector_u[y:y+h, x:x+w] = uvec
+    # st = Struct()
+    # st.vector_u = np.zeros((h0, w0, 2), dtype=np.float32)
+    # st.vector_v = np.zeros((h0, w0, 2), dtype=np.float32)
+    # st.coherence = np.zeros((h0, w0), dtype=np.float32)
+
+    # m = n
+    # for i in range(m):
+    #     for j in range(m):
+    #         w, h = chunk, chunk
+    #         # cx, cy = chunk*n//2, chunk*n
+    #         cx, cy = chunk*n//2, chunk*n//2 # circle
+    #         # x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m
+    #         x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2 # circle
+
+    #         uvec = np.array([x+chunk//2-cx, y+chunk//2-cy])
+    #         norm = np.linalg.norm(uvec)
+    #         uvec = uvec / norm
+    #         st.vector_u[y:y+h, x:x+w] = uvec
 
     print('Compute image_uo, image_vo')
     u_tasks, v_tasks = [], []
@@ -664,12 +677,14 @@ def main():
 
     # 1. 想一下要怎麼有系統的測試問題的每個環節
     # 2. vo 為原始 radius 時正常嗎？尺度縮小時會不會發散？ (solved)
-    # 3. vo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？
-    # 4. vo 為原始卷軸資料時，能跑回原本的結果嗎？
+    # 3. vo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？ (solved)
+    # 4. vo 為原始卷軸資料時，能跑回原本的結果嗎？ (solved)
     # 5. uo 為原始 theta 時正常嗎？
     # 6. uo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？
     # 7. uo 跑看看原始卷軸資料，有問題嗎？
     # 8. 上面都正常後，才能思考 theta 的合併問題...
+
+    # 我暫時把 scale_shift, Lshape scale 註解掉了，那些是形變的來源
 
     # image_uo = theta.copy()
     # image_up = theta.copy()
@@ -679,53 +694,67 @@ def main():
     image_vo_original = image_vo.copy()
     image_vp_original = image_vp.copy()
 
-
     print('merge image_vo & image_vp')
     split = n
-    # image_vo, image_vp = merge_level(image_vo, image_vp, split)
     image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
 
-    normalize_chunk(image_vo, n//2, 'o')
-    normalize_chunk(image_vp, n//2, 'p')
+    normalize_chunk(image_vo, split, 'o')
+    normalize_chunk(image_vp, split, 'p')
 
-    row_num, col_num = 2, 7
-    fig, axes = plt.subplots(row_num, col_num, figsize=(13, 5))
+    row_num, col_num = 3, 6
+    fig, axes = plt.subplots(row_num, col_num, figsize=(9, 5))
     colormap = cmap.Colormap("tab20", interpolation="nearest")
     col_list = [0] * row_num
 
-    row = 1
-    axes[row, col_list[row]].imshow(colormap(image_vo_original), aspect='equal')
-    axes[row, col_list[row]].set_title('image_vo_original')
+    row = 0
+    axes[row, col_list[row]].imshow(image, cmap='gray', aspect='equal')
+    axes[row, col_list[row]].set_title('image')
     axes[row, col_list[row]].axis('off')
     col_list[row] += 1
 
+    # row = 0
+    # axes[row, col_list[row]].imshow(colormap(image_vo_original), aspect='equal')
+    # axes[row, col_list[row]].set_title('vo_original')
+    # axes[row, col_list[row]].axis('off')
+    # col_list[row] += 1
+
     # row = 1
     # axes[row, col_list[row]].imshow(colormap(image_vp_original), aspect='equal')
-    # axes[row, col_list[row]].set_title('image_vp_original')
+    # axes[row, col_list[row]].set_title('vp_original')
     # axes[row, col_list[row]].axis('off')
     # col_list[row] += 1
 
     row = 0
     axes[row, col_list[row]].imshow(colormap(image_vo), aspect='equal')
-    axes[row, col_list[row]].set_title('image_vo_final')
+    axes[row, col_list[row]].set_title('vo_final')
     axes[row, col_list[row]].axis('off')
     col_list[row] += 1
 
     # row = 1
     # axes[row, col_list[row]].imshow(colormap(image_vp), aspect='equal')
-    # axes[row, col_list[row]].set_title('image_vp_final')
+    # axes[row, col_list[row]].set_title('vp_final')
     # axes[row, col_list[row]].axis('off')
     # col_list[row] += 1
 
     debug_i = 0
     for row in range(row_num):
         for col in range(col_num):
+            axes[row, col_list[row]].axis('off')
             if (col < col_list[row]): continue
             if (len(debug_list) < debug_i + 1): continue
 
             axes[row, col_list[row]].imshow(colormap(debug_list[debug_i]), aspect='equal')
             axes[row, col_list[row]].set_title('debug_' + str(debug_i))
-            axes[row, col_list[row]].axis('off')
+            # axes[row, col_list[row]].axis('off')
             col_list[row] += 1
             debug_i += 1
 
