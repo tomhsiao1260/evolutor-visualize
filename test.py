@@ -141,36 +141,17 @@ def updateV(args):
     v1 = solveUV1(image_v, st, axis='v')
     np.copyto(image_v, v1)
 
-def on_key(event, images, images_u, images_v):
-    global current_level
-    if event.key == ' ':  # space press
-        current_level += 1
-        if current_level >= len(images):
-            plt.close()
-        else:
-            plt.clf()
-            show_image(images, images_u, images_v)
+# def on_key(event, images, images_u, images_v):
+#     global current_level
+#     if event.key == ' ':  # space press
+#         current_level += 1
+#         if current_level >= len(images):
+#             plt.close()
+#         else:
+#             plt.clf()
+#             show_image(images, images_u, images_v)
 
 class Struct: pass
-
-def show_image(image, image_u, image_v):
-    plt.subplot(1, 3, 1)
-    plt.imshow(image, cmap='gray', aspect='equal')
-    plt.axis('off')
-
-    plt.subplot(1, 3, 2)
-    colormap = cmap.Colormap("tab20", interpolation="nearest")
-    image = colormap(image_u)
-    plt.imshow(image, aspect='equal')
-    plt.axis('off')
-
-    plt.subplot(1, 3, 3)
-    colormap = cmap.Colormap("tab20", interpolation="nearest")
-    image = colormap(image_v)
-    plt.imshow(image, aspect='equal')
-    plt.axis('off')
-
-    plt.draw()
 
 def merge_chunk(image_h, image_v, debug=False, mode=0):
     chunk_h, chunk_v = image_h.copy(), image_v.copy()
@@ -210,24 +191,39 @@ def merge_rectangle(image_v, image_h):
     ws, hs = rect_v.shape[1], rect_h.shape[0]
     rect_m = np.zeros((height, width))
 
-    # top-left
+    c1 = rect_v[hs-1, ws-1]
+    c2 = rect_h[hs-1, ws-1]
+    c = (c1 + c2) / 2
+    rect_v -= c1 + c
+    rect_h -= c2 + c
+
+    # xs, ys = np.linspace(0, 1, width-ws+1), np.linspace(0, 1, height-hs+1)
+
+    # top-left (region0)
     x, y, w, h = 0, 0, ws, hs
-    region0 = (rect_v[y:y+h, x:x+w] + rect_h[y:y+h, x:x+w]) / 2
+    # region0 = (rect_v[y:y+h, x:x+w] + rect_h[y:y+h, x:x+w]) / 2
+    # angle_array = 0
+    angle_array = create_angle_array(ws)[::-1,::-1]
+    region0 = (rect_v[y:y+h, x:x+w] * (1-angle_array) + rect_h[y:y+h, x:x+w] * angle_array)
     rect_m[y:y+h, x:x+w] = region0
-    # top-right
+    # top-right (region1)
     x, y, w, h = ws-1, 0, width-ws+1, hs
     a, b = scale_shift(rect_h[:, x:x+1], region0[:, -1:])
     # rect_h = a * rect_h + b
-    region1 = rect_h[y:y+h, x:x+w]
-    region1 += region0[:, -1:] - rect_h[:, x:x+1]
-    rect_m[y:y+h, x:x+w] = region1
-    # bottom-left
+    diff1 = region0[:, -1:] - rect_h[:, x:x+1]
+    rect_m[y:y+h, x:x+w] = rect_h[y:y+h, x:x+w] + diff1 * 0.0
+    # bottom-left (region2)
     x, y, w, h = 0, hs-1, ws, height-hs+1
     a, b = scale_shift(rect_v[y:y+1, :], region0[-1:, :])
     # rect_v = a * rect_v + b
-    region2 = rect_v[y:y+h, x:x+w]
-    region2 += region0[-1:, :] - rect_v[y:y+1, :]
-    rect_m[y:y+h, x:x+w] = region2
+    diff2 = region0[-1:, :] - rect_v[y:y+1, :]
+    rect_m[y:y+h, x:x+w] = rect_v[y:y+h, x:x+w] + diff2 * 0.0
+
+    angle_array = create_angle_array(ws)[::-1,::-1]
+    region11 = (region0 - diff1 * 0.5) * angle_array
+    region22 = (region0 - diff2 * 0.5) * (1 - angle_array)
+    x, y, w, h = 0, 0, ws, hs
+    # rect_m[y:y+h, x:x+w] = region11 + region22
     return rect_m
 
 def merge_Lshape(l_left_top, l_right_bottom):
@@ -252,10 +248,6 @@ def merge_Lshape(l_left_top, l_right_bottom):
     c = l_left_top[y:y+h, x:x+w]
     d = l_right_bottom[y:y+h, x:x+w]
     # scale factor
-    # scale = np.trace(a[:,::-1]) / (np.trace(b[:,::-1]) + 1e-7)
-    # scale += np.trace(c[:,::-1]) / (np.trace(d[:,::-1]) + 1e-7)
-    # scale /= 2
-    # scale = (np.sum(a) + np.sum(c)) / (np.sum(b) + np.sum(d) + 1e-7)
     lt_max = max(np.max(a), np.max(c))
     lt_min = min(np.min(a), np.min(c))
     rb_max = max(np.max(b), np.max(d))
@@ -334,6 +326,18 @@ def merge_bridge(bl, bm, br, shift, debug=False):
     # middle
     x, y, w, h = shift, 0, width_bm, height
     chunk[y:y+h, x:x+w] = b_middle
+    return chunk
+
+# align A to B
+def align(chunk_a, chunk_b):
+    chunk = chunk_a.copy()
+    amax, amin = np.max(chunk_a), np.min(chunk_a)
+    bmax, bmin = np.max(chunk_b), np.min(chunk_b)
+
+    chunk -= amin
+    chunk /= amax - amin
+    chunk *= bmax - bmin
+    chunk += bmin
     return chunk
 
 def merge_window(window_o, window_p):
@@ -558,13 +562,10 @@ def main():
     # x0, y0, n, chunk = 4*12, 10*12, 32, 12
     # x0, y0, n, chunk = 4*12, 10*12, 64, 6
 
-    # n, chunk = 64, 30
-    n, chunk = 32, 10
-    # n, chunk = 8, 12
-    # n, chunk = 32, 12
+    n, chunk = 2, 30
     w0, h0 = chunk*n, chunk*n
-    # x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n
-    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2 # circle
+    x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n
+    # x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2 # circle
 
     image_uo = createThetaArray(umb, x0, y0, w0, h0)
     image_vo = createRadiusArray(umb, x0, y0, w0, h0)
@@ -574,33 +575,24 @@ def main():
     theta = image_uo.copy()
 
     print('Compute Eigens ...')
-    z_scroll = zarr.open('./evol1/scroll.zarr/', mode='r')
-    z_scroll_u = zarr.open('./evol1/scroll_u.zarr/', mode='a')
-    z_scroll_v = zarr.open('./evol1/scroll_v.zarr/', mode='a')
-    image = z_scroll[level][0, y0:y0+h0, x0:x0+w0]
+    st = Struct()
+    st.vector_u = np.zeros((h0, w0, 2), dtype=np.float32)
+    st.vector_v = np.zeros((h0, w0, 2), dtype=np.float32)
+    st.coherence = np.zeros((h0, w0), dtype=np.float32)
 
-    image = image.astype(np.float32) / 65535.
-    st = ST(image)
-    st.computeEigens()
+    m = n
+    for i in range(m):
+        for j in range(m):
+            w, h = chunk, chunk
+            cx, cy = chunk*n//2, chunk*n
+            x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m
+            # cx, cy = chunk*n//2, chunk*n//2 # circle
+            # x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2 # circle
 
-    # st = Struct()
-    # st.vector_u = np.zeros((h0, w0, 2), dtype=np.float32)
-    # st.vector_v = np.zeros((h0, w0, 2), dtype=np.float32)
-    # st.coherence = np.zeros((h0, w0), dtype=np.float32)
-
-    # m = n
-    # for i in range(m):
-    #     for j in range(m):
-    #         w, h = chunk, chunk
-    #         # cx, cy = chunk*n//2, chunk*n
-    #         cx, cy = chunk*n//2, chunk*n//2 # circle
-    #         # x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m
-    #         x, y = w*i + cx - chunk*m//2, h*j + cy - chunk*m//2 # circle
-
-    #         uvec = np.array([x+chunk//2-cx, y+chunk//2-cy])
-    #         norm = np.linalg.norm(uvec)
-    #         uvec = uvec / norm
-    #         st.vector_u[y:y+h, x:x+w] = uvec
+            uvec = np.array([x+chunk//2-cx, y+chunk//2-cy])
+            norm = np.linalg.norm(uvec)
+            uvec = uvec / norm
+            st.vector_u[y:y+h, x:x+w] = uvec
 
     print('Compute image_uo, image_vo')
     u_tasks, v_tasks = [], []
@@ -675,86 +667,77 @@ def main():
 
     #         image_up[y:y+h, x:x+w] = theta[y:y+h, x:x+w]
 
-    # 1. 想一下要怎麼有系統的測試問題的每個環節
+    # 1. 想一下要怎麼有系統的測試問題的每個環節 (solved)
     # 2. vo 為原始 radius 時正常嗎？尺度縮小時會不會發散？ (solved)
     # 3. vo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？ (solved)
     # 4. vo 為原始卷軸資料時，能跑回原本的結果嗎？ (solved)
-    # 5. uo 為原始 theta 時正常嗎？
-    # 6. uo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？
-    # 7. uo 跑看看原始卷軸資料，有問題嗎？
-    # 8. 上面都正常後，才能思考 theta 的合併問題...
+    # 5. uo 為 st 圓心推導產生的簡單梯度，合併結果正常嗎？
+    # 6. uo 跑看看原始卷軸資料，有問題嗎？
+    # 7. 上面都正常後，才能思考 theta 的合併問題...
 
     # 我暫時把 scale_shift, Lshape scale 註解掉了，那些是形變的來源
 
-    # image_uo = theta.copy()
-    # image_up = theta.copy()
-    # image_vo = radius.copy()
-    # image_vp = radius.copy()
-
+    image_uo_original = image_uo.copy()
+    image_up_original = image_up.copy()
     image_vo_original = image_vo.copy()
     image_vp_original = image_vp.copy()
 
     print('merge image_vo & image_vp')
-    split = n
-    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    split = split // 2
-    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    split = split // 2
-    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    split = split // 2
-    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    split = split // 2
-    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    split = split // 2
+    # split = n
+    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    # split = split // 2
+    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    # split = split // 2
+    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    # split = split // 2
+    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    # split = split // 2
+    # # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    # # split = split // 2
 
-    normalize_chunk(image_vo, split, 'o')
-    normalize_chunk(image_vp, split, 'p')
+    # normalize_chunk(image_vo, split, 'o')
+    # normalize_chunk(image_vp, split, 'p')
+
+    print('merge image_uo & image_up')
+    split = n
+    image_uo, image_up, debug_list = merge_level(image_uo, image_up, split)
+    split = split // 2
+    # image_uo, image_up, debug_list = merge_level(image_uo, image_up, split)
+    # split = split // 2
+    # image_uo, image_up, debug_list = merge_level(image_uo, image_up, split)
+    # split = split // 2
+    # image_uo, image_up, debug_list = merge_level(image_uo, image_up, split)
+    # split = split // 2
+    # # image_uo, image_up, debug_list = merge_level(image_uo, image_up, split)
+    # # split = split // 2
+
+    normalize_chunk(image_uo, split, 'o')
+    normalize_chunk(image_up, split, 'p')
 
     row_num, col_num = 3, 6
     fig, axes = plt.subplots(row_num, col_num, figsize=(9, 5))
     colormap = cmap.Colormap("tab20", interpolation="nearest")
+    for ax in axes.flat: ax.axis('off')
     col_list = [0] * row_num
 
     row = 0
-    axes[row, col_list[row]].imshow(image, cmap='gray', aspect='equal')
-    axes[row, col_list[row]].set_title('image')
-    axes[row, col_list[row]].axis('off')
+    axes[row, col_list[row]].imshow(colormap(image_uo_original), aspect='equal')
+    axes[row, col_list[row]].set_title('uo_original')
     col_list[row] += 1
-
-    # row = 0
-    # axes[row, col_list[row]].imshow(colormap(image_vo_original), aspect='equal')
-    # axes[row, col_list[row]].set_title('vo_original')
-    # axes[row, col_list[row]].axis('off')
-    # col_list[row] += 1
-
-    # row = 1
-    # axes[row, col_list[row]].imshow(colormap(image_vp_original), aspect='equal')
-    # axes[row, col_list[row]].set_title('vp_original')
-    # axes[row, col_list[row]].axis('off')
-    # col_list[row] += 1
 
     row = 0
-    axes[row, col_list[row]].imshow(colormap(image_vo), aspect='equal')
-    axes[row, col_list[row]].set_title('vo_final')
-    axes[row, col_list[row]].axis('off')
+    axes[row, col_list[row]].imshow(colormap(image_uo), aspect='equal')
+    axes[row, col_list[row]].set_title('uo_final')
     col_list[row] += 1
-
-    # row = 1
-    # axes[row, col_list[row]].imshow(colormap(image_vp), aspect='equal')
-    # axes[row, col_list[row]].set_title('vp_final')
-    # axes[row, col_list[row]].axis('off')
-    # col_list[row] += 1
 
     debug_i = 0
     for row in range(row_num):
         for col in range(col_num):
-            axes[row, col_list[row]].axis('off')
             if (col < col_list[row]): continue
             if (len(debug_list) < debug_i + 1): continue
 
             axes[row, col_list[row]].imshow(colormap(debug_list[debug_i]), aspect='equal')
             axes[row, col_list[row]].set_title('debug_' + str(debug_i))
-            # axes[row, col_list[row]].axis('off')
             col_list[row] += 1
             debug_i += 1
 
