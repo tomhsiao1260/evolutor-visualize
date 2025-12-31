@@ -479,6 +479,67 @@ def normalize_chunk(image, n, mode='o'):
                 if (j == 0 or j == n): h = chunk//2
                 image[y:y+h, x:x+w] = normalize(image[y:y+h, x:x+w])
 
+def merge_(chunk_left, chunk_right):
+    l = chunk_left.copy()
+    r = chunk_right.copy()
+    d = l[:,-1:] - r[:,:1]
+
+    shift = 1.
+    # shift = .5
+    h0, w0 = chunk_left.shape
+    chunk = np.zeros((h0, 2*w0), dtype=l.dtype)
+
+    x, y, w, h = 0, 0, w0, h0
+    chunk[y:y+h, x:x+w]  = normalize(-2*l + d)
+    chunk[y:y+h, x:x+w] *= normalize(-1*l + 0) + shift
+    chunk[y:y+h, x:x+w] /= normalize(-1*l + d) + shift
+    chunk[y:y+h, x:x+w]  = normalize(-chunk[y:y+h, x:x+w])
+    x, y, w, h = w0, 0, w0, h0
+    chunk[y:y+h, x:x+w]  = normalize(2*r + d)
+    chunk[y:y+h, x:x+w] *= normalize(1*r + 0) + shift
+    chunk[y:y+h, x:x+w] /= normalize(1*r + d) + shift
+    chunk[y:y+h, x:x+w]  = normalize(chunk[y:y+h, x:x+w])
+    return align_(chunk)
+
+def align_(chunk):
+    h0, w0 = chunk.shape
+    s = w0//2
+    dl = chunk[:, s-2:s-1] - chunk[:, s-1:s+0]
+    dm = chunk[:, s-1:s+0] - chunk[:, s+0:s+1]
+    dr = chunk[:, s+0:s+1] - chunk[:, s+1:s+2]
+    x, y, w, h = 0, 0, w0//2, h0
+    chunk[y:y+h, x:x+w] -= (dm - dl) / 2
+    x, y, w, h = w0//2, 0, w0//2, h0
+    chunk[y:y+h, x:x+w] += (dm - dr) / 2
+    return normalize(chunk)
+
+def merge_test(image):
+    img = image.copy()
+    chunk = np.zeros_like(img)
+    h0, w0 = chunk.shape
+
+    x, y, w, h = 0, 0, w0//2, h0//2
+    image_left = img[y:y+h, x:x+w].copy()
+    x, y, w, h = w0//2, 0, w0//2, h0//2
+    image_right = img[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, 0, w0, h0//2
+    chunk[y:y+h, x:x+w] = merge_(image_left, image_right)
+
+    x, y, w, h = 0, h0//2, w0//2, h0//2
+    image_left = img[y:y+h, x:x+w].copy()
+    x, y, w, h = w0//2, h0//2, w0//2, h0//2
+    image_right = img[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, h0//2, w0, h0//2
+    chunk[y:y+h, x:x+w] = merge_(image_left, image_right)
+
+    x, y, w, h = 0, 0, w0, h0//2
+    image_left = chunk[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, h0//2, w0, h0//2
+    image_right = chunk[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, 0, w0, h0
+    chunk[y:y+h, x:x+w] = merge_(image_left.T, image_right.T).T
+    return chunk
+
 def merge_level(image_o, image_p, split):
     image_oo = image_o.copy()
     image_pp = image_p.copy()
@@ -492,6 +553,10 @@ def merge_level(image_o, image_p, split):
         for j in range(n):
             x, y, w, h = i*chunk, j*chunk, chunk, chunk
             image_oo[y:y+h, x:x+w], debug_chunk_list = merge_window(image_o[y:y+h, x:x+w], image_p[y:y+h, x:x+w])
+
+            image_oo[y:y+h, x:x+w] = merge_test(image_o[y:y+h, x:x+w])
+
+            x, y, w, h = i*chunk, j*chunk, chunk, chunk
 
             if not debug_list:
                 for _ in debug_chunk_list:
@@ -562,7 +627,7 @@ def main():
     # x0, y0, n, chunk = 4*12, 10*12, 32, 12
     # x0, y0, n, chunk = 4*12, 10*12, 64, 6
 
-    n, chunk = 2, 30
+    n, chunk = 16, 30
     w0, h0 = chunk*n, chunk*n
     x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n
     # x0, y0 = umb[0] - chunk*n//2, umb[1] - chunk*n//2 # circle
@@ -683,20 +748,20 @@ def main():
     image_vp_original = image_vp.copy()
 
     print('merge image_vo & image_vp')
-    # split = n
+    split = n
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
+    image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
+    split = split // 2
     # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
     # split = split // 2
-    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    # split = split // 2
-    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    # split = split // 2
-    # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    # split = split // 2
-    # # image_vo, image_vp, debug_list = merge_level(image_vo, image_vp, split)
-    # # split = split // 2
 
-    # normalize_chunk(image_vo, split, 'o')
-    # normalize_chunk(image_vp, split, 'p')
+    normalize_chunk(image_vo, split, 'o')
+    normalize_chunk(image_vp, split, 'p')
 
     print('merge image_uo & image_up')
     split = n
@@ -721,12 +786,12 @@ def main():
     col_list = [0] * row_num
 
     row = 0
-    axes[row, col_list[row]].imshow(colormap(image_uo_original), aspect='equal')
+    axes[row, col_list[row]].imshow(colormap(image_vo_original), aspect='equal')
     axes[row, col_list[row]].set_title('uo_original')
     col_list[row] += 1
 
     row = 0
-    axes[row, col_list[row]].imshow(colormap(image_uo), aspect='equal')
+    axes[row, col_list[row]].imshow(colormap(image_vo), aspect='equal')
     axes[row, col_list[row]].set_title('uo_final')
     col_list[row] += 1
 

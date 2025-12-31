@@ -12,6 +12,60 @@ def merge(chunk_left, chunk_right):
     r = chunk_right.copy()
     d = l[:,-1:] - r[:,:1]
 
+    # shift = .0
+    shift = .5
+    h0, w0 = chunk_left.shape
+    chunk = np.zeros((h0, 2*w0), dtype=l.dtype)
+    xs, ys = np.meshgrid(np.linspace(0, 1, w0), np.linspace(0, 1, h0))
+    mid = (r[:, :1] + l[:, -1:]) / 2
+
+    x, y, w, h = 0, 0, w0, h0
+    chunk[y:y+h, x:x+w]  = l - (l[:, -1:] - mid[:, :]) * xs * 0.5
+    # chunk[y:y+h, x:x+w]  = normalize(-2*l + d)
+    # chunk[y:y+h, x:x+w] *= normalize(-1*l + 0) + shift
+    # chunk[y:y+h, x:x+w] /= normalize(-1*l + d) + shift
+    # chunk[y:y+h, x:x+w]  = normalize(-chunk[y:y+h, x:x+w])
+    # chunk[y:y+h, x:x+w]  = normalize(chunk[y:y+h, x:x+w])
+    x, y, w, h = w0, 0, w0, h0
+    chunk[y:y+h, x:x+w]  = r - (r[:, :1] - mid[:, :]) * (1-xs) * 0.5
+    # chunk[y:y+h, x:x+w]  = normalize(2*r + d)
+    # chunk[y:y+h, x:x+w] *= normalize(1*r + 0) + shift
+    # chunk[y:y+h, x:x+w] /= normalize(1*r + d) + shift
+    # chunk[y:y+h, x:x+w]  = normalize(chunk[y:y+h, x:x+w])
+    # return chunk
+    return normalize(chunk)
+    # return align(chunk)
+
+def align(chunk):
+    h0, w0 = chunk.shape
+    s = w0//2
+    dl = chunk[:, s-2:s-1] - chunk[:, s-1:s+0]
+    dm = chunk[:, s-1:s+0] - chunk[:, s+0:s+1]
+    dr = chunk[:, s+0:s+1] - chunk[:, s+1:s+2]
+    x, y, w, h = 0, 0, w0//2, h0
+    chunk[y:y+h, x:x+w] -= (dm - dl) / 2
+    x, y, w, h = w0//2, 0, w0//2, h0
+    chunk[y:y+h, x:x+w] += (dm - dr) / 2
+    return normalize(chunk)
+
+def align__(chunk):
+    h0, w0 = chunk.shape
+    s = w0//2
+    dl = chunk[:, s-2:s-1] - chunk[:, s-1:s+0]
+    dm = chunk[:, s-1:s+0] - chunk[:, s+0:s+1]
+    dr = chunk[:, s+0:s+1] - chunk[:, s+1:s+2]
+    x, y, w, h = 0, 0, w0//2, h0
+    chunk[y:y+h, x:x+w] -= (dm - dl) / 2
+    x, y, w, h = w0//2, 0, w0//2, h0
+    chunk[y:y+h, x:x+w] += (dm - dr) / 2
+    return normalize(chunk)
+
+def merge_(chunk_left, chunk_right):
+    l = chunk_left.copy()
+    r = chunk_right.copy()
+    d = l[:,-1:] - r[:,:1]
+
+    # shift = .0
     shift = .5
     h0, w0 = chunk_left.shape
     chunk = np.zeros((h0, 2*w0), dtype=l.dtype)
@@ -21,16 +75,15 @@ def merge(chunk_left, chunk_right):
     chunk[y:y+h, x:x+w] *= normalize(-1*l + 0) + shift
     chunk[y:y+h, x:x+w] /= normalize(-1*l + d) + shift
     chunk[y:y+h, x:x+w]  = normalize(-chunk[y:y+h, x:x+w])
-    # chunk[y:y+h, x:x+w] = l
     x, y, w, h = w0, 0, w0, h0
     chunk[y:y+h, x:x+w]  = normalize(2*r + d)
     chunk[y:y+h, x:x+w] *= normalize(1*r + 0) + shift
     chunk[y:y+h, x:x+w] /= normalize(1*r + d) + shift
     chunk[y:y+h, x:x+w]  = normalize(chunk[y:y+h, x:x+w])
-    # chunk[y:y+h, x:x+w] = r
-    return align(chunk)
+    # return chunk
+    return align_(chunk)
 
-def align(chunk):
+def align_(chunk):
     h0, w0 = chunk.shape
     s = w0//2
     dl = chunk[:, s-2:s-1] - chunk[:, s-1:s+0]
@@ -52,8 +105,8 @@ def main():
     xs, ys = np.meshgrid(np.linspace(0, 1, w0), np.linspace(0, 1, h0))
 
     x, y, w, h = 0, 0, w0, h0
+    # angle_array = xs - 5*ys
     angle_array = xs - ys
-    # angle_array = xs + ys
     angle_array -= np.min(angle_array)
     angle_array /= np.max(angle_array)
     imageA[y:y+h, x:x+w] = angle_array
@@ -64,22 +117,26 @@ def main():
     angle_array /= np.max(angle_array)
     imageA[y:y+h, x:x+w] = angle_array
 
-    x, y, w, h = w0//2, 0, w0, h0
-    imageB[y:y+h, x:x+w] = np.linspace(0, 1, w)
-
-    x, y, w, h = 0, 0, w0, h0
+    x, y, w, h = 0, 0, w0, h0//2
     chunk_left = imageA[y:y+h, x:x+w].copy()
-    x, y, w, h = w0, 0, w0, h0
+    x, y, w, h = w0, 0, w0, h0//2
     chunk_right = imageA[y:y+h, x:x+w].copy()
-    x, y, w, h = 0, 0, 2*w0, h0
-    imageC[y:y+h, x:x+w] = merge(chunk_left, chunk_right)
+    x, y, w, h = 0, 0, 2*w0, h0//2
+    imageB[y:y+h, x:x+w] = merge(chunk_left, chunk_right)
 
-    x, y, w, h = w0//2, 0, w0//2, h0
+    x, y, w, h = 0, h0//2, w0, h0//2
     chunk_left = imageA[y:y+h, x:x+w].copy()
-    x, y, w, h = w0, 0, w0//2, h0
+    x, y, w, h = w0, h0//2, w0, h0//2
     chunk_right = imageA[y:y+h, x:x+w].copy()
-    x, y, w, h = w0//2, 0, w0, h0
-    imageD[y:y+h, x:x+w] = merge(chunk_left, chunk_right)
+    x, y, w, h = 0, h0//2, 2*w0, h0//2
+    imageB[y:y+h, x:x+w] = merge(chunk_left, chunk_right)
+
+    x, y, w, h = 0, 0, w0*2, h0//2
+    chunk_left = imageB[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, h0//2, w0*2, h0//2
+    chunk_right = imageB[y:y+h, x:x+w].copy()
+    x, y, w, h = 0, 0, w0*2, h0
+    imageC[y:y+h, x:x+w] = merge(chunk_left.T, chunk_right.T).T
 
     row_num, col_num = 2, 2
     fig, axes = plt.subplots(row_num, col_num, figsize=(9, 5))
@@ -90,13 +147,10 @@ def main():
     axes[0, 0].set_title('A')
 
     axes[0, 1].imshow(colormap(imageB), aspect='equal')
-    axes[0, 1].set_title('B')
+    axes[0, 1].set_title('C')
 
     axes[1, 0].imshow(colormap(imageC), aspect='equal')
     axes[1, 0].set_title('C')
-
-    axes[1, 1].imshow(colormap(imageD), aspect='equal')
-    axes[1, 1].set_title('D')
 
     plt.show()
 
